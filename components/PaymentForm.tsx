@@ -42,7 +42,7 @@ export default function PaymentForm() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [paymentToken, setPaymentToken] = useState<string | null>(null)
   const [cardType, setCardType] = useState<string>('unknown')
-  const [step, setStep] = useState<'form' | 'processing' | 'success'>('form')
+  const [step, setStep] = useState<'form' | 'processing' | '3ds-verification' | 'success'>('form')
   const [transactionId, setTransactionId] = useState<string | null>(null)
   const [deviceDataCollected, setDeviceDataCollected] = useState(false)
   const [cardinalSessionId, setCardinalSessionId] = useState<string | null>(null)
@@ -69,6 +69,7 @@ export default function PaymentForm() {
   const [challengeReferenceId, setChallengeReferenceId] = useState<string | null>(null);
   const [paymentResult, setPaymentResult] = useState<any>(null);
   const autoPaymentTriggeredRef = useRef(false);
+  const [isCollectingDeviceData, setIsCollectingDeviceData] = useState(false)
 
   const cardNumberRef = useRef<HTMLDivElement>(null)
   const cvvRef = useRef<HTMLDivElement>(null)
@@ -82,33 +83,21 @@ export default function PaymentForm() {
   // Get client IP address
   useEffect(() => {
     const getClientIp = async () => {
-      console.log('🌐 Attempting to get client IP address...')
       try {
-        console.log('📡 Fetching IP from api.ipify.org...')
         const response = await fetch('https://api.ipify.org?format=json')
-        console.log('📡 IP API response status:', response.status)
-        
         if (!response.ok) {
           throw new Error(`IP API returned status: ${response.status}`)
         }
-        
         const data = await response.json()
-        console.log('🌐 IP address received:', data.ip)
         setClientIpAddress(data.ip)
       } catch (error) {
-        console.error('❌ Failed to get IP address from api.ipify.org:', error)
-        
         // Fallback: Try alternative IP service
         try {
-          console.log('🔄 Trying fallback IP service...')
           const fallbackResponse = await fetch('https://api64.ipify.org?format=json')
           const fallbackData = await fallbackResponse.json()
-          console.log('🌐 Fallback IP address received:', fallbackData.ip)
           setClientIpAddress(fallbackData.ip)
         } catch (fallbackError) {
-          console.error('❌ Fallback IP service also failed:', fallbackError)
-          console.log('⚠️ Setting IP address to localhost as fallback')
-          setClientIpAddress('127.0.0.1')
+          setClientIpAddress('127.0.0.1') // Use localhost as final fallback
         }
       }
     }
@@ -150,72 +139,51 @@ export default function PaymentForm() {
     
     const loadCybersourceScript = (scriptUrl: string, integrity: string): Promise<void> => {
       return new Promise((resolve, reject) => {
-                 // Check if script already exists
-         const existingScript = document.querySelector(`script[src="${scriptUrl}"]`)
-         if (existingScript) {
-           if (typeof window.Flex === 'function') {
-             resolve()
-           } else {
-             existingScript.addEventListener('load', () => resolve())
-             existingScript.addEventListener('error', () => reject(new Error('Script failed to load')))
-           }
-           return
-         }
+        // Check if script already exists
+        const existingScript = document.querySelector(`script[src="${scriptUrl}"]`)
+        if (existingScript) {
+          if (typeof window.Flex === 'function') {
+            resolve()
+          } else {
+            existingScript.addEventListener('load', () => resolve())
+            existingScript.addEventListener('error', () => reject(new Error('Script failed to load')))
+          }
+          return
+        }
 
         const script = document.createElement('script')
         script.src = scriptUrl
         script.integrity = integrity
         script.crossOrigin = 'http://localhost:3000'
         script.onload = () => {
-          console.log('✅ Cybersource FLEX script loaded successfully')
-          console.log('🔍 Checking window object for Flex...')
-          console.log('window.Flex exists:', !!window.Flex)
-          console.log('window.Flex value:', window.Flex)
-          console.log('window object keys:', Object.keys(window).filter(key => key.includes('FLEX') || key.includes('flex') || key.includes('Cybersource')))
-          
           // Wait for FLEX to be available after script loads
           let attempts = 0
           const maxAttempts = 100 // 5 seconds max wait
           
           const waitForFLEX = () => {
-                                      console.log(`🔍 Attempt ${attempts + 1}: window.Flex =`, window.Flex)
-            console.log(`🔍 Attempt ${attempts + 1}: typeof window.Flex =`, typeof window.Flex)
-            
             if (window.Flex && typeof window.Flex === 'function') {
-              console.log('✅ FLEX library is ready')
               resolve()
             } else {
               attempts++
               if (attempts >= maxAttempts) {
-                console.log('❌ Final attempt - window.Flex:', window.Flex)
-                console.log('❌ Available window properties:', Object.getOwnPropertyNames(window).filter(prop => 
-                  prop.toLowerCase().includes('flex') || 
-                  prop.toLowerCase().includes('cyber') ||
-                  prop.toLowerCase().includes('cs')
-                ))
                 reject(new Error('Flex library failed to initialize after script load'))
                 return
               }
-              console.log(`⏳ Waiting for FLEX to initialize... (${attempts}/${maxAttempts})`)
               setTimeout(waitForFLEX, 50)
             }
           }
           waitForFLEX()
         }
         script.onerror = () => {
-          console.error('❌ Failed to load Cybersource FLEX script')
           reject(new Error('Failed to load Cybersource script'))
         }
         
         document.head.appendChild(script)
-        console.log('📜 Loading Cybersource script:', scriptUrl)
       })
     }
     
     const initializeMicroform = async () => {
       try {
-        console.log('🔄 Step 1: Getting JWT from backend...')
-        
         // Get microform token from backend
         const response = await fetch('http://localhost:8080/api/v1/payment/checkout-token', {
           method: 'POST',
@@ -225,10 +193,7 @@ export default function PaymentForm() {
           })
         })
         
-        console.log('📡 API Response status:', response.status, response.ok)
-        
         const data = await response.json()
-        console.log('📦 API Response data:', data)
         
         if (data.result !== 'SUCCESS') {
           throw new Error(`Backend API returned error: ${data.result}. Errors: ${data.readableErrorMessages?.join(', ') || 'Unknown error'}`)
@@ -237,13 +202,9 @@ export default function PaymentForm() {
         if (!data.token) {
           throw new Error('No token received from backend API')
         }
-
-        console.log('🔍 Step 2: Decoding JWT to extract script info...')
         
         // Decode JWT to get script URL and integrity
         const decodedJWT = decodeJWT(data.token)
-        console.log('🔓 Decoded JWT:', decodedJWT)
-        
         const clientLibrary = decodedJWT.ctx?.[0]?.data?.clientLibrary
         const clientLibraryIntegrity = decodedJWT.ctx?.[0]?.data?.clientLibraryIntegrity
         
@@ -251,24 +212,14 @@ export default function PaymentForm() {
           throw new Error('Missing clientLibrary or clientLibraryIntegrity in JWT')
         }
         
-        console.log('📜 Script URL:', clientLibrary)
-        console.log('🔐 Integrity:', clientLibraryIntegrity)
-
-        console.log('⬇️ Step 3: Loading Cybersource script...')
-        
         // Load the correct script with integrity check
         await loadCybersourceScript(clientLibrary, clientLibraryIntegrity)
-        
-        console.log('🎫 Step 4: Initializing Flex SDK with capture context...')
         
         // Initialize Flex SDK with the capture context (JWT token)
         if (!window.Flex) {
           throw new Error('Cybersource Flex library is not available')
         }
         const flex = new window.Flex(data.token)
-        console.log('✅ Flex SDK initialized')
-        
-        console.log('🎫 Step 5: Creating microform with styling...')
         
         // Create microform with basic styling
         const microform = flex.microform({ 
@@ -280,9 +231,6 @@ export default function PaymentForm() {
           }
         })
         setMicroformInstance(microform)
-        console.log('✅ Microform created')
-        
-        console.log('🔧 Step 6: Creating and loading microform fields...')
 
         // Create and load microform fields following official documentation
         const numberField = microform.createField('number', {
@@ -296,106 +244,42 @@ export default function PaymentForm() {
         // Load fields into containers
         if (cardNumberRef.current) {
           numberField.load(cardNumberRef.current)
-          console.log('✅ Card number field loaded')
           
           // Add field validation listeners
           numberField.on('change', (event: any) => {
-            console.log('🔢 Card number field change:', event)
-            console.log('🔢 Card number valid:', event.valid)
-            console.log('🔢 Card number could be valid:', event.couldBeValid)
+            // Handle card number validation silently
           })
           
           numberField.on('error', (event: any) => {
-            console.error('❌ Card number field error:', event)
-          })
-          
-          numberField.on('load', () => {
-            console.log('✅ Card number field loaded and ready')
+            toast.error('Card number field error')
           })
         }
 
         if (cvvRef.current) {
           securityCodeField.load(cvvRef.current)
-          console.log('✅ Security code field loaded')
           
           // Add field validation listeners
           securityCodeField.on('change', (event: any) => {
-            console.log('🔢 Security code field change:', event)
-            console.log('🔢 Security code valid:', event.valid)
-            console.log('🔢 Security code could be valid:', event.couldBeValid)
+            // Handle security code validation silently
           })
           
           securityCodeField.on('error', (event: any) => {
-            console.error('❌ Security code field error:', event)
-          })
-          
-          securityCodeField.on('load', () => {
-            console.log('✅ Security code field loaded and ready')
+            toast.error('Security code field error')
           })
         }
-
-        console.log('🔧 Step 7: Setting up Cardinal Commerce device data collection...')
         
         // Set up Cardinal Commerce message listener using the separate class
         const cardinalListener = CardinalCommerceListener.getInstance();
         cardinalListener.startListening((messageData) => {
-          // Enable payment button when any message is received (like visa-aft)
+          // Enable payment button when any message is received
           setIsAuthenticating(false)
           
           if (messageData.MessageType === "profile.completed" && messageData.Status === true) {
-            console.log('✅ Device data collection completed successfully')
-            console.log('🔍 Cardinal Commerce Session Data:')
-            console.log('  Session ID:', messageData.SessionId)
-            console.log('  Message Type:', messageData.MessageType)
-            console.log('  Status:', messageData.Status)
-            console.log('  Full Message Data:', messageData)
-            
-            // Enhanced Cardinal data logging
-            console.log('🎯 DETAILED CARDINAL SESSION DATA:')
-            console.log('🎯 ===============================')
-            console.log('🎯 Session ID:', messageData.SessionId)
-            console.log('🎯 Message Type:', messageData.MessageType)
-            console.log('🎯 Status:', messageData.Status)
-            
-            // Log any additional data that might be in the message
-            if (messageData.Data) {
-              console.log('📊 Additional Cardinal Data:', messageData.Data)
-              console.log('📊 Data type:', typeof messageData.Data)
-              if (typeof messageData.Data === 'object') {
-                console.log('📊 Data keys:', Object.keys(messageData.Data))
-                for (const [key, value] of Object.entries(messageData.Data)) {
-                  console.log(`📊   Data.${key}:`, value)
-                }
-              }
-            }
-            if (messageData.ErrorNumber) {
-              console.log('⚠️ Cardinal Error Number:', messageData.ErrorNumber)
-            }
-            if (messageData.ErrorDescription) {
-              console.log('⚠️ Cardinal Error Description:', messageData.ErrorDescription)
-            }
-            
-            // Log any other properties that might exist
-            console.log('🔍 Checking for other Cardinal properties...')
-            const knownProps = ['SessionId', 'MessageType', 'Status', 'Data', 'ErrorNumber', 'ErrorDescription']
-            for (const [key, value] of Object.entries(messageData)) {
-              if (!knownProps.includes(key)) {
-                console.log(`🔍 Additional property found: ${key} =`, value)
-              }
-            }
-            console.log('🎯 ===============================')
-            
-            console.log('🔍 Setting deviceDataCollected to true')
             setDeviceDataCollected(true)
-            console.log('🔍 Setting cardinalSessionId to:', messageData.SessionId)
-            setCardinalSessionId(messageData.SessionId) // Fixed: use SessionId instead of "Session Id"
-            
-            console.log('🎯 Cardinal Commerce fingerprint session ID captured:', messageData.SessionId)
-            console.log('🎯 This will be used as fingerprintSessionId in device data')
+            setCardinalSessionId(messageData.SessionId)
             
             // Auto-proceed to payment processing since we have all required data (only once)
             if (!autoPaymentTriggeredRef.current) {
-              console.log('🚀 Auto-proceeding to payment processing...')
               autoPaymentTriggeredRef.current = true
               
               // Get the current form data and proceed with payment
@@ -406,36 +290,13 @@ export default function PaymentForm() {
                   processPaymentWithDeviceData(messageData.SessionId, currentFormData)
                 }, 100)
               } else {
-                console.log('⚠️ Form data not complete, user needs to fill form and submit again')
                 toast.success('Device data collected! Please complete the form and submit again.')
               }
-            } else {
-              console.log('⚠️ Auto payment already triggered, skipping duplicate call')
             }
-            
           } else if (messageData.MessageType === "profile.error") {
-            console.error('❌ Device data collection failed:', messageData)
-            console.error('❌ ERROR CARDINAL DATA DUMP:')
-            console.error('❌ =========================')
-            console.error('❌ Complete error messageData:', messageData)
-            for (const [key, value] of Object.entries(messageData)) {
-              console.error(`❌   ${key}:`, value)
-            }
-            console.error('❌ =========================')
-            // Don't show error toast, just log it (like visa-aft)
-          } else {
-            console.log('ℹ️ Other Cardinal Commerce message:', messageData.MessageType)
-            console.log('ℹ️ OTHER MESSAGE CARDINAL DATA DUMP:')
-            console.log('ℹ️ =================================')
-            console.log('ℹ️ Complete other messageData:', messageData)
-            for (const [key, value] of Object.entries(messageData)) {
-              console.log(`ℹ️   ${key}:`, value)
-            }
-            console.log('ℹ️ =================================')
+            // Handle error silently - user can still proceed with payment
           }
         });
-        
-        console.log('✅ Cardinal Commerce device data collection listener set up')
 
         // Note: Cardinal Commerce form will be submitted after authentication setup
         // when accessToken and ddcUrl are available (like visa-aft)
@@ -458,17 +319,13 @@ export default function PaymentForm() {
     }
   }, [])
 
-  // Process payment with collected device data (like visa-aft receipt.php)
+  // Process payment with collected device data
   const processPaymentWithDeviceData = async (sessionId: string, data: PaymentFormData) => {
-    console.log('🚀 processPaymentWithDeviceData called with sessionId:', sessionId)
-    
     try {
-      console.log('💳 Processing payment with collected device data...')
-      
       // Collect comprehensive device information with the real session ID
       const deviceInfo = collectDeviceInformation(sessionId)
       
-      // Create payment request with all collected data (like visa-aft)
+      // Create payment request with all collected data
       const paymentRequest = {
         transientToken: currentTokenRef.current || paymentToken,
         cardHolder: `${data.firstName} ${data.lastName}`,
@@ -482,24 +339,9 @@ export default function PaymentForm() {
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email,
-        // Device information (like visa-aft)
+        // Device information
         ...deviceInfo
       }
-      
-      console.log('📤 Payment Request with Device Data:')
-      console.log('  Transient Token:', paymentRequest.transientToken ? paymentRequest.transientToken.substring(0, 20) + '...' : 'null')
-      console.log('  Card Holder:', paymentRequest.cardHolder)
-      console.log('  Currency:', paymentRequest.currency)
-      console.log('  Total Amount:', paymentRequest.totalAmount)
-      console.log('  Return URL:', paymentRequest.returnUrl)
-      console.log('  Merchant Reference:', paymentRequest.merchantReference)
-      console.log('  First Name:', paymentRequest.firstName)
-      console.log('  Last Name:', paymentRequest.lastName)
-      console.log('  Email:', paymentRequest.email)
-      console.log('  IP Address:', paymentRequest.ipAddress)
-      console.log('  Fingerprint Session ID:', paymentRequest.fingerprintSessionId)
-      console.log('  User Agent:', paymentRequest.userAgentBrowserValue)
-      console.log('  Full Payment Request:', paymentRequest)
 
       const response = await fetch('http://localhost:8080/api/v1/payment/combined', {
         method: 'POST',
@@ -508,18 +350,14 @@ export default function PaymentForm() {
       })
 
       const responseData = await response.json()
-      console.log('📥 Payment response:', responseData)
 
       if (responseData.result === 'SUCCESS') {
-        // Payment authorized successfully by the backend (no capture)
-        console.log('✅ Payment authorized successfully (authorization-only flow)')
         const paymentResponse = responseData.paymentResponse;
         setStep('success');
         setTransactionId(paymentResponse?.id || paymentResponse?.transactionId);
-        toast.success('Payment authorized successfully!');
+        toast.success('Payment successful!');
       } else if (responseData.result === 'CHALLENGE_REQUIRED') {
         // Handle 3DS challenge
-        console.log('🔐 3DS challenge required')
         const paymentData = responseData.paymentResponse
         const stepUpUrl = paymentData.consumerAuthenticationInformation?.stepUpUrl
         const challengeAccessToken = paymentData.consumerAuthenticationInformation?.accessToken
@@ -528,6 +366,7 @@ export default function PaymentForm() {
         const merchantRef = clientRefInfo?.code || 'order-' + Date.now();
         
         if (stepUpUrl && challengeAccessToken && referenceId) {
+          setStep('3ds-verification'); // Set step to 3DS verification
           setChallengeStepUpUrl(stepUpUrl)
           setChallengeAccessToken(challengeAccessToken)
           setChallengeTransactionId(referenceId)
@@ -540,7 +379,6 @@ export default function PaymentForm() {
         throw new Error(responseData.error || 'Payment failed')
       }
     } catch (error) {
-      console.error('Payment processing error:', error)
       toast.error(error instanceof Error ? error.message : 'Payment failed')
       setStep('form')
     } finally {
@@ -551,8 +389,6 @@ export default function PaymentForm() {
   // 3D Secure Authentication Functions
   const setupPayerAuthentication = async (transientToken: string): Promise<AuthenticationSetupResponse> => {
     try {
-      console.log('🔐 Setting up 3D Secure authentication...')
-      
       const authRequest: AuthenticationSetupRequest = {
         isTransientToken: true,
         transientToken: transientToken,
@@ -570,7 +406,6 @@ export default function PaymentForm() {
       }
 
       const authData: AuthenticationSetupResponse = await response.json()
-      console.log('🔐 Authentication setup response:', authData)
 
       if (authData.data?.status === 'COMPLETED') {
         setAuthenticationSetup(authData)
@@ -583,7 +418,6 @@ export default function PaymentForm() {
         throw new Error('Authentication setup not completed')
       }
     } catch (error) {
-      console.error('❌ Authentication setup error:', error)
       throw error
     }
   }
@@ -591,27 +425,16 @@ export default function PaymentForm() {
   // Trigger device data collection
   const triggerDeviceDataCollection = async () => {
     try {
-      console.log('📡 Triggering Cardinal Commerce device data collection...')
-      
       // Submit the Cardinal Commerce form (accessToken and ddcUrl are now available from auth setup)
       const cardinalCollectionForm = document.querySelector('#cardinal_collection_form') as HTMLFormElement
       if (cardinalCollectionForm && accessToken && ddcUrl) {
-        console.log('🔍 Cardinal Commerce form data:', {
-          action: ddcUrl,
-          jwt: accessToken ? accessToken.substring(0, 50) + '...' : 'empty'
-        })
         cardinalCollectionForm.submit()
-        console.log('✅ Cardinal Commerce form submitted')
-      } else {
-        console.warn('⚠️ Cardinal collection form not found or missing accessToken/ddcUrl')
-        console.log('🔍 Current state:', { accessToken: !!accessToken, ddcUrl: !!ddcUrl })
       }
       
       // Wait for device data collection to complete
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((resolve) => {
         const checkComplete = function() {
           if (deviceDataCollected && cardinalSessionId) {
-            console.log('✅ Device data collection completed successfully')
             resolve()
           } else {
             setTimeout(checkComplete, 500) // Check every 500ms
@@ -620,9 +443,7 @@ export default function PaymentForm() {
         checkComplete()
       })
     } catch (error) {
-      console.error('❌ Device data collection failed:', error)
-      console.warn('⚠️ Continuing payment flow without device data collection')
-      // Don't throw error, just log and continue
+      // Continue payment flow without device data collection
       return Promise.resolve()
     }
   }
@@ -630,8 +451,6 @@ export default function PaymentForm() {
   // Enrollment Check Function
   const checkEnrollment = async (tokenizedToken: string, data: PaymentFormData): Promise<EnrollmentCheckResponse> => {
     try {
-      console.log('🔍 Checking 3D Secure enrollment...')
-      
       const enrollmentRequest: EnrollmentCheckRequest = {
         flexResponse: tokenizedToken,
         cardHolderName: `${data.firstName} ${data.lastName}`,
@@ -654,11 +473,8 @@ export default function PaymentForm() {
       }
 
       const enrollmentData: EnrollmentCheckResponse = await response.json()
-      console.log('🔍 Enrollment check response:', enrollmentData)
-
       return enrollmentData
     } catch (error) {
-      console.error('❌ Enrollment check error:', error)
       throw error
     }
   }
@@ -705,17 +521,14 @@ export default function PaymentForm() {
       })
       const afterData = await afterRes.json()
       if (afterData.result === 'SUCCESS') {
-        // Payment authorized successfully after challenge (no capture)
-        console.log('✅ Payment authorized successfully after challenge (authorization-only)')
         const paymentResponse = afterData.paymentResponse;
         setStep('success');
         setTransactionId(paymentResponse?.id || paymentResponse?.transactionId);
-        toast.success('Payment authorized successfully!');
+        toast.success('Payment successful!');
       } else {
         throw new Error(afterData.error || 'Payment failed after challenge')
       }
     } catch (error) {
-      console.error('After challenge error:', error)
       toast.error(error instanceof Error ? error.message : 'Payment failed after challenge')
       setStep('form')
     } finally {
@@ -723,18 +536,10 @@ export default function PaymentForm() {
     }
   }
 
-  // Collect device information from browser (like visa-aft)
+  // Collect device information from browser
   const collectDeviceInformation = (sessionId?: string) => {
-    console.log('🔍 Starting device information collection...')
-    console.log('🔍 Session ID parameter:', sessionId)
-    console.log('🔍 Current cardinalSessionId state:', cardinalSessionId)
-    
     // Use the provided session ID or fall back to state, then to mock
     const fingerprintSessionId = sessionId || cardinalSessionId || `mock-session-${Date.now()}`
-    console.log('🔍 Final fingerprint session ID:', fingerprintSessionId)
-    
-    // Collect all available device information
-    console.log('🔍 Current clientIpAddress state:', clientIpAddress)
     
     const deviceInfo = {
       ipAddress: clientIpAddress || '127.0.0.1', // Use localhost as fallback if IP not available
@@ -751,59 +556,6 @@ export default function PaymentForm() {
       httpBrowserTimeDifference: new Date().getTimezoneOffset().toString(),
       userAgentBrowserValue: navigator.userAgent
     }
-    
-    // Log detailed device information
-    console.log('📱 Device Information Collected:')
-    console.log('  IP Address:', deviceInfo.ipAddress)
-    console.log('  Fingerprint Session ID:', deviceInfo.fingerprintSessionId)
-    console.log('  Browser Language:', deviceInfo.httpBrowserLanguage)
-    console.log('  Screen Resolution:', `${deviceInfo.httpBrowserScreenWidth}x${deviceInfo.httpBrowserScreenHeight}`)
-    console.log('  Color Depth:', deviceInfo.httpBrowserColorDepth)
-    console.log('  Timezone Offset:', deviceInfo.httpBrowserTimeDifference)
-    console.log('  User Agent:', deviceInfo.userAgentBrowserValue)
-    console.log('  Accept Browser Value:', deviceInfo.httpAcceptBrowserValue)
-    console.log('  Accept Content:', deviceInfo.httpAcceptContent)
-    console.log('  Java Enabled:', deviceInfo.httpBrowserJavaEnabled)
-    console.log('  JavaScript Enabled:', deviceInfo.httpBrowserJavaScriptEnabled)
-    
-    // Log additional browser capabilities
-    console.log('🔧 Additional Browser Capabilities:')
-    console.log('  Cookie Enabled:', navigator.cookieEnabled)
-    console.log('  Do Not Track:', navigator.doNotTrack)
-    console.log('  Platform:', navigator.platform)
-    console.log('  Vendor:', navigator.vendor)
-    console.log('  Connection Type:', (navigator as any).connection?.type || 'unknown')
-    console.log('  Connection Speed:', (navigator as any).connection?.downlink || 'unknown')
-    console.log('  Memory Info:', (navigator as any).deviceMemory || 'unknown')
-    console.log('  Hardware Concurrency:', navigator.hardwareConcurrency || 'unknown')
-    console.log('  Max Touch Points:', navigator.maxTouchPoints || 'unknown')
-    
-    // Log screen information
-    console.log('🖥️ Screen Information:')
-    console.log('  Available Width:', screen.availWidth)
-    console.log('  Available Height:', screen.availHeight)
-    console.log('  Pixel Depth:', screen.pixelDepth)
-    console.log('  Orientation:', screen.orientation?.type || 'unknown')
-    
-    // Log window information
-    console.log('🪟 Window Information:')
-    console.log('  Inner Width:', window.innerWidth)
-    console.log('  Inner Height:', window.innerHeight)
-    console.log('  Outer Width:', window.outerWidth)
-    console.log('  Outer Height:', window.outerHeight)
-    console.log('  Device Pixel Ratio:', window.devicePixelRatio)
-    
-    // Log location information
-    console.log('🌍 Location Information:')
-    console.log('  Protocol:', window.location.protocol)
-    console.log('  Hostname:', window.location.hostname)
-    console.log('  Port:', window.location.port)
-    console.log('  Pathname:', window.location.pathname)
-    console.log('  Search:', window.location.search)
-    console.log('  Hash:', window.location.hash)
-    
-    console.log('✅ Device information collection completed')
-    console.log('📦 Final device info object:', deviceInfo)
     
     return deviceInfo
   }
@@ -830,7 +582,7 @@ export default function PaymentForm() {
     setIsLoading(true)
 
     try {
-      // Step 1: Tokenize card (like visa-aft checkout.php)
+      // Step 1: Tokenize card
       await new Promise<void>((resolve, reject) => {
         microformInstance.createToken({
           expirationMonth: data.expirationMonth,
@@ -853,20 +605,15 @@ export default function PaymentForm() {
       // Store the tokenized token for later use in processPayment
       setPaymentToken(tokenizedToken)
       currentTokenRef.current = tokenizedToken
-      console.log('💳 Token stored successfully')
 
       // Step 2: Check if device data collection is already complete
-      if (deviceDataCollected && cardinalSessionId && authenticationSetup?.data?.consumerAuthenticationInformation?.accessToken && authenticationSetup?.data?.consumerAuthenticationInformation?.deviceDataCollectionUrl) {
-        console.log('✅ Device data already collected, payment will be processed automatically')
-        console.log('ℹ️ No need to submit form again - payment processing is automatic')
+      if (deviceDataCollected && cardinalSessionId) {
         toast.success('Device data collected! Payment will be processed automatically.')
         setIsLoading(false)
         return
       }
 
-      // Step 3: Submit to backend for authentication setup (like visa-aft token.php)
-      console.log('📤 Submitting to backend for authentication setup...')
-      
+      // Step 3: Submit to backend for authentication setup
       const authSetupRequest = {
         transientToken: tokenizedToken,
         cardHolder: `${data.firstName} ${data.lastName}`,
@@ -877,7 +624,6 @@ export default function PaymentForm() {
         merchantReference: 'order-' + Date.now(),
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: data.saveCard || false,
-        // Personal information
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email
@@ -890,7 +636,6 @@ export default function PaymentForm() {
       })
 
       const authResponseData = await authResponse.json()
-      console.log('📥 Authentication setup response:', authResponseData)
 
       if (authResponseData.result !== 'SUCCESS') {
         throw new Error(authResponseData.error || 'Authentication setup failed')
@@ -915,16 +660,9 @@ export default function PaymentForm() {
       const ddcReference = consumerAuthInfo.referenceId
       const merchantRef = clientRefInfo?.code || 'order-' + Date.now()
 
-      console.log('🔐 Authentication setup completed:', {
-        accessToken: accessToken ? accessToken.substring(0, 50) + '...' : 'null',
-        ddcUrl: ddcUrl,
-        ddcReference: ddcReference,
-        merchantRef: merchantRef
-      })
-
-      // Step 4: Trigger device data collection (like visa-aft)
-      console.log('📡 Triggering Cardinal Commerce device data collection...')
+      // Step 4: Trigger device data collection
       setIsAuthenticating(true)
+      setIsCollectingDeviceData(true)
       
       const cardinalCollectionForm = document.querySelector('#cardinal_collection_form') as HTMLFormElement
       if (cardinalCollectionForm && ddcUrl && accessToken) {
@@ -935,23 +673,11 @@ export default function PaymentForm() {
           jwtInput.value = accessToken
         }
         
-        console.log('🔍 Cardinal Commerce form data:', {
-          action: ddcUrl,
-          jwt: accessToken ? accessToken.substring(0, 50) + '...' : 'null'
-        })
-        
         cardinalCollectionForm.submit()
-        console.log('✅ Cardinal Commerce form submitted')
       } else {
         throw new Error('Cardinal Commerce form not found or missing accessToken/ddcUrl')
       }
 
-      // Step 5: Wait for device data collection to complete
-      // The Cardinal Commerce message listener will set deviceDataCollected to true
-      // and the user can then submit the form again to complete the payment
-      console.log('⏳ Waiting for device data collection to complete...')
-      console.log('ℹ️ Please submit the form again after device data collection is complete')
-      
       // Store the authentication data for the next submission
       setAccessToken(accessToken)
       setDdcUrl(ddcUrl)
@@ -960,13 +686,48 @@ export default function PaymentForm() {
       setIsAuthenticating(false)
 
     } catch (error) {
-      console.error('Payment error:', error)
       toast.error(error instanceof Error ? error.message : 'Payment failed')
       setIsAuthenticating(false)
     } finally {
       setIsLoading(false)
     }
   }
+
+  // Update the Cardinal Commerce listener to handle device data collection state
+  useEffect(() => {
+    const cardinalListener = CardinalCommerceListener.getInstance();
+    cardinalListener.startListening((messageData) => {
+      setIsAuthenticating(false)
+      
+      if (messageData.MessageType === "profile.completed" && messageData.Status === true) {
+        setDeviceDataCollected(true)
+        setCardinalSessionId(messageData.SessionId)
+        setIsCollectingDeviceData(false)
+        
+        // Auto-proceed to payment processing since we have all required data (only once)
+        if (!autoPaymentTriggeredRef.current) {
+          autoPaymentTriggeredRef.current = true
+          
+          // Get the current form data and proceed with payment
+          const currentFormData = watch()
+          if (currentFormData.amount && currentFormData.firstName && currentFormData.lastName && currentFormData.email) {
+            setTimeout(() => {
+              processPaymentWithDeviceData(messageData.SessionId, currentFormData)
+            }, 100)
+          } else {
+            toast.success('Device data collected! Please complete the form and submit again.')
+          }
+        }
+      } else if (messageData.MessageType === "profile.error") {
+        setIsCollectingDeviceData(false)
+        // Handle error silently - user can still proceed with payment
+      }
+    });
+
+    return () => {
+      cardinalListener.stopListening();
+    }
+  }, []);
 
   const resetForm = () => {
     setStep('form')
@@ -985,9 +746,9 @@ export default function PaymentForm() {
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 mb-4">
             <CheckCircle className="h-8 w-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Authorized!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Successful!</h2>
           <p className="text-gray-600 mb-4">
-            Your payment has been authorized successfully.
+            Your payment has been processed successfully.
           </p>
           {transactionId && (
             <p className="text-sm text-gray-500 mb-6">
@@ -998,7 +759,7 @@ export default function PaymentForm() {
             onClick={resetForm}
             className="btn-primary"
           >
-            Authorize Another Payment
+            Make Another Payment
           </button>
         </div>
       </div>
@@ -1012,9 +773,28 @@ export default function PaymentForm() {
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 mb-4">
             <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Authorizing Payment</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Processing Payment</h2>
           <p className="text-gray-600">
-            Please wait while we securely authorize your payment...
+            Please wait while we process your payment...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (step === '3ds-verification') {
+    return (
+      <div className="card p-8">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-yellow-100 mb-4">
+            <Loader2 className="h-8 w-8 text-yellow-600 animate-spin" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Verifying Your Card</h2>
+          <p className="text-gray-600 mb-4">
+            We're securely verifying your card with your bank...
+          </p>
+          <p className="text-sm text-yellow-600">
+            You may be redirected to your bank's website to complete verification.
           </p>
         </div>
       </div>
@@ -1346,20 +1126,33 @@ export default function PaymentForm() {
           <div className="flex items-start">
             <Loader2 className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
             <div className="text-sm text-yellow-800">
-              <p className="font-medium mb-1">3D Secure Authentication</p>
-              <p>Please wait while we verify your identity with your bank...</p>
+              <p className="font-medium mb-1">3D Secure Verification</p>
+              <p>Please wait while we verify your card with your bank...</p>
             </div>
           </div>
         </div>
       )}
 
-      {mounted && deviceDataCollected && (
+      {mounted && deviceDataCollected && !isAuthenticating && (
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
           <div className="flex items-start">
             <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
             <div className="text-sm text-green-800">
-              <p className="font-medium mb-1">3D Secure Verification Complete</p>
-              <p>Your identity has been verified successfully.</p>
+              <p className="font-medium mb-1">Card Verification Complete</p>
+              <p>Your card has been verified successfully. Processing payment...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Device Data Collection Status */}
+      {mounted && isCollectingDeviceData && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start">
+            <Loader2 className="h-5 w-5 text-blue-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
+            <div className="text-sm text-blue-800">
+              <p className="font-medium mb-1">Collecting Device Data</p>
+              <p>Please wait while we securely collect device information...</p>
             </div>
           </div>
         </div>
@@ -1368,23 +1161,28 @@ export default function PaymentForm() {
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={isLoading || !isInitialized || isAuthenticating || (deviceDataCollected && cardinalSessionId !== null) || autoPaymentTriggeredRef.current}
+        disabled={isLoading || !isInitialized || isAuthenticating || isCollectingDeviceData || (deviceDataCollected && cardinalSessionId !== null) || autoPaymentTriggeredRef.current}
         className="btn-primary w-full flex items-center justify-center space-x-2"
       >
         {isLoading ? (
           <>
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Processing...</span>
+            <span>Processing Payment...</span>
           </>
         ) : isAuthenticating ? (
           <>
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Authenticating...</span>
+            <span>Verifying Card...</span>
+          </>
+        ) : isCollectingDeviceData ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>Collecting Device Data...</span>
           </>
         ) : deviceDataCollected && cardinalSessionId ? (
           <>
-            <CheckCircle className="h-5 w-5" />
-            <span>Payment Processing Automatically...</span>
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>Processing Payment...</span>
           </>
         ) : (
           <>
