@@ -16,7 +16,7 @@ import {
   EnrollmentCheckResponse,
   ChallengeRequest
 } from '@/types/payment'
-import ChallengeModal from './ChallengeModal'
+import ChallengeIframe from './ChallengeIframe'
 import { CardinalCommerceListener } from './CardinalCommerceListener'
 
 const CARD_TYPES = {
@@ -68,6 +68,7 @@ export default function PaymentForm() {
   const [challengeAccessToken, setChallengeAccessToken] = useState<string | null>(null);
   const [challengeReferenceId, setChallengeReferenceId] = useState<string | null>(null);
   const [paymentResult, setPaymentResult] = useState<any>(null);
+  const [pareq, setPareq] = useState<string | null>(null);
   const autoPaymentTriggeredRef = useRef(false);
   const [isCollectingDeviceData, setIsCollectingDeviceData] = useState(false)
 
@@ -331,7 +332,7 @@ export default function PaymentForm() {
         cardHolder: `${data.firstName} ${data.lastName}`,
         currency: data.currency,
         totalAmount: data.amount.toString(),
-        returnUrl: window.location.origin + '/payment/3ds-callback',
+        returnUrl: 'http://localhost:3000/api/payment/challenge-result',
         merchantReference: merchantReference || 'order-' + Date.now(),
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: false,
@@ -356,26 +357,61 @@ export default function PaymentForm() {
         setStep('success');
         setTransactionId(paymentResponse?.id || paymentResponse?.transactionId);
         toast.success('Payment successful!');
-      } else if (responseData.result === 'CHALLENGE_REQUIRED') {
-        // Handle 3DS challenge
-        const paymentData = responseData.paymentResponse
-        const stepUpUrl = paymentData.consumerAuthenticationInformation?.stepUpUrl
-        const challengeAccessToken = paymentData.consumerAuthenticationInformation?.accessToken
-        const referenceId = paymentData.consumerAuthenticationInformation?.referenceId
-        const clientRefInfo = paymentData.clientReferenceInformation;
-        const merchantRef = clientRefInfo?.code || 'order-' + Date.now();
-        
-        if (stepUpUrl && challengeAccessToken && referenceId) {
-          setStep('3ds-verification'); // Set step to 3DS verification
-          setChallengeStepUpUrl(stepUpUrl)
-          setChallengeAccessToken(challengeAccessToken)
-          setChallengeTransactionId(referenceId)
-          setMerchantReference(merchantRef); 
-          setShowChallenge(true)
-        } else {
-          throw new Error('Missing challenge data from payment response')
+        const paymentResponseStatus = paymentResponse.status;
+        if (paymentResponseStatus === 'PENDING_AUTHENTICATION') {
+          // Handle 3DS challenge
+          const paymentData = responseData.paymentResponse;
+          const stepUpUrl = paymentData.consumerAuthenticationInformation?.stepUpUrl;
+          const acsTransactionId = paymentData.consumerAuthenticationInformation?.acsTransactionId;
+          const authTransactionId = paymentData.consumerAuthenticationInformation?.authenticationTransactionId;
+          const clientRefInfo = paymentData.clientReferenceInformation;
+          const merchantRef = clientRefInfo?.code || 'order-' + Date.now();
+          
+          const pareqValue = paymentData.consumerAuthenticationInformation?.pareq;
+          const accessToken = paymentData.consumerAuthenticationInformation?.accessToken;
+
+          // Store payment data in localStorage for the challenge completion
+          const challengeData = {
+            authenticationTransactionId: authTransactionId,
+            transactionID: paymentData.id,
+            currency: data.currency,
+            totalAmount: data.amount.toString(),
+            transientToken: currentTokenRef.current || paymentToken,
+            merchantReference: merchantRef,
+            ecommerceIndicatorAuth: 'internet',
+            ipAddress: deviceInfo.ipAddress,
+            fingerprintSessionId: deviceInfo.fingerprintSessionId,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            email: data.email
+          };
+          localStorage.setItem('challengeData', JSON.stringify(challengeData));
+          
+          console.log('Payment Response:', paymentData);
+          console.log('Step Up URL:', stepUpUrl);
+          console.log('Access Token:', accessToken);
+          console.log('Pareq:', pareqValue);
+          
+          if (stepUpUrl && pareqValue && accessToken) {
+            console.log('Starting 3DS Challenge:', {
+              stepUpUrl,
+              accessToken,
+              authTransactionId,
+              merchantRef
+            });
+            
+            setStep('3ds-verification'); // Set step to 3DS verification
+            setChallengeStepUpUrl(stepUpUrl)
+            setChallengeAccessToken(accessToken)
+            setChallengeTransactionId(authTransactionId)
+            setMerchantReference(merchantRef);
+            setPareq(pareqValue);
+            setShowChallenge(true)
+          } else {
+            throw new Error('Missing challenge data from payment response')
         }
-      } else {
+        }
+      }else {
         throw new Error(responseData.error || 'Payment failed')
       }
     } catch (error) {
@@ -457,7 +493,7 @@ export default function PaymentForm() {
         currency: data.currency,
         totalAmount: data.amount.toString(),
         paReference: ddcReference || undefined,
-        returnUrl: `${window.location.origin}/payment/challenge-callback`,
+        returnUrl: 'http://localhost:8082/receipt.php',
         merchantReference: merchantReference || undefined,
         ecommerceIndicatorAuth: 'vbv'
       }
@@ -479,62 +515,69 @@ export default function PaymentForm() {
     }
   }
 
-  // Challenge Completion Handler
-  const handleChallengeComplete = async (
-    success: boolean,
-    authenticationTransactionId?: string,
-    data?: PaymentFormData,
-    tokenizedToken?: string
-  ) => {
-    setShowChallenge(false)
-    if (!success || !authenticationTransactionId || !data || !tokenizedToken) {
-      toast.error('3DS challenge failed or cancelled')
-      setStep('form')
-      return
-    }
-    setIsLoading(true)
-    try {
-      // Collect device information (only ip and fingerprintSessionId for after-challenge)
-      const deviceInfo = collectDeviceInformation()
-      const afterChallengeDeviceInfo = {
-        ipAddress: deviceInfo.ipAddress,
-        fingerprintSessionId: deviceInfo.fingerprintSessionId,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email
+  // Handle URL params after challenge completion
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const status = url.searchParams.get('status')
+    const message = url.searchParams.get('message')
+    const transactionId = url.searchParams.get('transactionId')
+    const md = url.searchParams.get('md')
+
+    if (status === 'challenge_complete' && transactionId && md) {
+      // Get stored payment data from localStorage
+      const storedChallengeData = localStorage.getItem('challengeData')
+      if (!storedChallengeData) {
+        toast.error('Payment data not found')
+        setStep('form')
+        return
       }
 
-      // Call /api/v1/payment/combined-after-challenge
-      const afterRes = await fetch('http://localhost:8080/api/v1/payment/combined-after-challenge', {
+      const challengeData = JSON.parse(storedChallengeData)
+
+      // Send the final payment request to the backend
+      fetch('http://localhost:8080/api/v1/payment/combined-after-challenge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          authenticationTransactionId,
-          currency: data.currency,
-          totalAmount: data.amount.toString(),
-          transientToken: tokenizedToken,
-          merchantReference: merchantReference || 'order-' + Date.now(),
-          ecommerceIndicatorAuth: 'internet',
-          // Device information (only ip and fingerprintSessionId)
-          ...afterChallengeDeviceInfo
+          ...challengeData,
+          transactionId,
+          md,
+          sessionId: md // Include the session ID from Cybersource
         })
       })
-      const afterData = await afterRes.json()
-      if (afterData.result === 'SUCCESS') {
-        const paymentResponse = afterData.paymentResponse;
-        setStep('success');
-        setTransactionId(paymentResponse?.id || paymentResponse?.transactionId);
-        toast.success('Payment successful!');
-      } else {
-        throw new Error(afterData.error || 'Payment failed after challenge')
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Payment failed after challenge')
+      .then(response => response.json())
+      .then(data => {
+        if (data.result === 'SUCCESS') {
+          setStep('success')
+          setTransactionId(data.paymentResponse?.id || transactionId)
+          toast.success('Payment successful!')
+          localStorage.removeItem('challengeData') // Clear stored data
+        } else {
+          throw new Error(data.error || 'Payment completion failed')
+        }
+      })
+      .catch(error => {
+        toast.error(error instanceof Error ? error.message : 'Payment failed')
+        setStep('form')
+      })
+      .finally(() => {
+        // Reset challenge-related states
+        setChallengeStepUpUrl(null)
+        setChallengeAccessToken(null)
+        setChallengeTransactionId(null)
+        setPareq(null)
+        setShowChallenge(false)
+      })
+    } else if (status === 'error') {
       setStep('form')
-    } finally {
-      setIsLoading(false)
+      toast.error(`Payment failed: ${message}`)
     }
-  }
+
+    // Clear URL params
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [])
 
   // Collect device information from browser
   const collectDeviceInformation = (sessionId?: string) => {
@@ -620,7 +663,7 @@ export default function PaymentForm() {
         currency: data.currency,
         totalAmount: data.amount.toString(),
         paReference: 'ref-' + Date.now(),
-        returnUrl: window.location.origin + '/payment/3ds-callback',
+        returnUrl: 'http://localhost:3000/api/payment/challenge-result',
         merchantReference: 'order-' + Date.now(),
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: data.saveCard || false,
@@ -693,10 +736,58 @@ export default function PaymentForm() {
     }
   }
 
+  const handleChallengeComplete = async (transactionId: string, md?: string) => {
+    try {
+      // Get stored payment data from localStorage
+      const storedChallengeData = localStorage.getItem('challengeData');
+      if (!storedChallengeData) {
+        throw new Error('Payment data not found');
+      }
+
+      const challengeData = JSON.parse(storedChallengeData);
+
+      // Send the final payment request to the backend
+      const response = await fetch('http://localhost:8080/api/v1/payment/combined-after-challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...challengeData,
+          transactionId: transactionId,
+          ...(md && { md }) // Only include md if it's provided
+        })
+      });
+
+      const responseData = await response.json();
+
+      if (responseData.result === 'SUCCESS') {
+        setStep('success');
+        setTransactionId(responseData.paymentResponse?.id || transactionId);
+        toast.success('Payment successful!');
+        
+        // Clear stored payment data
+        localStorage.removeItem('challengeData');
+      } else {
+        throw new Error(responseData.error || 'Payment completion failed');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Payment completion failed');
+      setStep('form');
+    } finally {
+      // Reset challenge-related states
+      setShowChallenge(false);
+      setChallengeStepUpUrl(null);
+      setChallengeAccessToken(null);
+      setChallengeTransactionId(null);
+      setPareq(null);
+    }
+  };
+
   // Update the Cardinal Commerce listener to handle device data collection state
   useEffect(() => {
     const cardinalListener = CardinalCommerceListener.getInstance();
-    cardinalListener.startListening((messageData) => {
+    
+    // Handle Cardinal Commerce messages
+    const handleCardinalMessage = (messageData: any) => {
       setIsAuthenticating(false)
       
       if (messageData.MessageType === "profile.completed" && messageData.Status === true) {
@@ -722,10 +813,50 @@ export default function PaymentForm() {
         setIsCollectingDeviceData(false)
         // Handle error silently - user can still proceed with payment
       }
-    });
+    };
+
+        // Handle 3DS challenge callback messages
+    const handle3DSCallback = (event: MessageEvent) => {
+      // SECURITY: Verify the origin of the message
+      const expectedOrigin = 'http://localhost:3000'; // In production, use your actual domain
+      if (event.origin !== expectedOrigin) {
+        console.warn('⚠️ Message from unexpected origin:', event.origin);
+        return;
+      }
+      
+      if (event.data?.type === '3ds-challenge-complete') {
+        const { transactionId, status, md, error } = event.data;
+        
+        if (status === 'success' && transactionId) {
+          console.log('🎉 3DS Challenge completed via postMessage:', { transactionId, md });
+          // Handle the challenge completion
+          handleChallengeComplete(transactionId, md);
+        } else if (status === 'error') {
+          console.error('❌ 3DS Challenge failed via postMessage:', error);
+          toast.error('3D Secure verification failed');
+          setStep('form');
+        }
+      } else if (event.data?.type === '3ds-callback') {
+        // Legacy callback handling
+        const { transactionId, status, md } = event.data.data;
+        
+        if (status === 'success') {
+          // Use window.location.href instead of router.push
+          window.location.href = `/challenge-processing?TransactionId=${transactionId}&MD=${md}`;
+        } else {
+          toast.error('3D Secure verification failed');
+          setStep('form');
+        }
+      }
+    };
+
+    // Set up both listeners
+    cardinalListener.startListening(handleCardinalMessage);
+    // window.addEventListener('message', handle3DSCallback);
 
     return () => {
       cardinalListener.stopListening();
+      // window.removeEventListener('message', handle3DSCallback);
     }
   }, []);
 
@@ -783,19 +914,33 @@ export default function PaymentForm() {
   }
 
   if (step === '3ds-verification') {
+    if (!showChallenge || !challengeStepUpUrl || !pareq) {
+      return (
+        <div className="card p-8">
+          <div className="text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-yellow-100 mb-4">
+              <Loader2 className="h-8 w-8 text-yellow-600 animate-spin" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Preparing Verification</h2>
+            <p className="text-gray-600">Please wait...</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="card p-8">
         <div className="text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-yellow-100 mb-4">
-            <Loader2 className="h-8 w-8 text-yellow-600 animate-spin" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Bank Verification Required</h2>
+          <p className="text-gray-600 mb-4">Please complete the verification process below.</p>
+          <div className="challenge-container mx-auto">
+            <ChallengeIframe
+              stepUpUrl={challengeStepUpUrl}
+              accessToken={challengeAccessToken || ''}
+                            pareq={pareq}
+              onChallengeComplete={handleChallengeComplete}
+            />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Verifying Your Card</h2>
-          <p className="text-gray-600 mb-4">
-            We're securely verifying your card with your bank...
-          </p>
-          <p className="text-sm text-yellow-600">
-            You may be redirected to your bank's website to complete verification.
-          </p>
         </div>
       </div>
     )
@@ -1199,16 +1344,6 @@ export default function PaymentForm() {
       )}
       </form>
 
-      {/* 3D Secure Challenge Modal */}
-      {showChallenge && challengeStepUpUrl && challengeAccessToken && (
-        <ChallengeModal
-          isOpen={showChallenge}
-          onClose={() => setShowChallenge(false)}
-          accessToken={challengeAccessToken || ''}
-          stepUpUrl={challengeStepUpUrl}
-          onChallengeComplete={handleChallengeComplete}
-        />
-      )}
       {paymentResult && (
         <div className={paymentResult.success ? 'success' : 'error'}>
           {paymentResult.message}
