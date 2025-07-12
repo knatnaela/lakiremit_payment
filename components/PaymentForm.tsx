@@ -741,9 +741,6 @@ export default function PaymentForm() {
           const cardTypeCode = detectedCardTypes?.[0] || '001';
           setCardType(cardTypeCode);
           
-          // Log detected card type for debugging
-          const cardTypeName = CARD_TYPE_CODES[cardTypeCode as keyof typeof CARD_TYPE_CODES] || 'Unknown';
-          console.log(`💳 Detected card type: ${cardTypeName} (Code: ${cardTypeCode})`);
           resolve()
         })
       })
@@ -937,52 +934,11 @@ export default function PaymentForm() {
       }
     };
 
-        // Handle 3DS challenge callback messages
-    const handle3DSCallback = (event: MessageEvent) => {
-      // SECURITY: Verify the origin of the message
-      const expectedOrigin = 'http://localhost:3000'; // In production, use your actual domain
-      if (event.origin !== expectedOrigin) {
-        console.warn('⚠️ Message from unexpected origin:', event.origin);
-        return;
-      }
-      
-      if (event.data?.type === '3ds-challenge-complete') {
-        const { transactionId, status, md, error } = event.data;
-        
-        if (status === 'success' && transactionId) {
-          console.log('🎉 3DS Challenge completed via postMessage:', { transactionId, md });
-          // Handle the challenge completion
-          handleChallengeComplete(transactionId, md);
-        } else if (status === 'error') {
-          console.error('❌ 3DS Challenge failed via postMessage:', error);
-          const errorMsg = error || '3D Secure verification failed';
-          setErrorMessage(errorMsg);
-          setStep('failed');
-          toast.error(errorMsg);
-        }
-      } else if (event.data?.type === '3ds-callback') {
-        // Legacy callback handling
-        const { transactionId, status, md } = event.data.data;
-        
-        if (status === 'success') {
-          // Use window.location.href instead of router.push
-          window.location.href = `/challenge-processing?TransactionId=${transactionId}&MD=${md}`;
-        } else {
-          const errorMsg = '3D Secure verification failed';
-          setErrorMessage(errorMsg);
-          setStep('failed');
-          toast.error(errorMsg);
-        }
-      }
-    };
-
     // Set up both listeners
     cardinalListener.startListening(handleCardinalMessage);
-    // window.addEventListener('message', handle3DSCallback);
 
     return () => {
       cardinalListener.stopListening();
-      // window.removeEventListener('message', handle3DSCallback);
     }
   }, []);
 
@@ -1176,7 +1132,7 @@ export default function PaymentForm() {
           </div>
         </div>
 
-        {amount && (
+        {Boolean(amount) && (
           <div className="mt-4 text-center">
             <p className="text-2xl font-bold text-gray-900">
               {currency} {amount ? parseFloat(amount.toString()).toFixed(2) : '0.00'}
