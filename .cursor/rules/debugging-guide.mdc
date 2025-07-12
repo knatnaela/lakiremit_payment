@@ -1,0 +1,176 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Debugging & Troubleshooting Guide
+
+## Common Payment Flow Issues
+
+### Microform Initialization Problems
+**Symptoms**: "Payment form not initialized" errors
+**Debug Steps**:
+1. Check browser console for script loading errors
+2. Verify JWT token structure and expiration
+3. Ensure `window.Flex` is available before initialization
+4. Check CORS settings for script loading
+
+**Key Code Location**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx) - `initializeMicroform` function
+
+### 3D Secure Challenge Issues
+**Symptoms**: Challenge not appearing or failing
+**Debug Steps**:
+1. Verify `stepUpUrl`, `pareq`, and `accessToken` are present
+2. Check postMessage listener configuration
+3. Validate challenge iframe loading
+4. Ensure proper origin validation
+
+**Key Code Location**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx) - `processPaymentWithDeviceData` function
+
+### Cardinal Commerce Integration Problems
+**Symptoms**: Device data collection failing
+**Debug Steps**:
+1. Check if Cardinal Commerce form is properly submitted
+2. Verify `MessageType` and `Status` in postMessage events
+3. Ensure `cardinalSessionId` is captured
+4. Debug iframe communication issues
+
+**Key Code Location**: [components/CardinalCommerceListener.tsx](mdc:components/CardinalCommerceListener.tsx)
+
+## Debugging Strategies
+
+### Console Logging Pattern
+```typescript
+// Use consistent logging for payment flow
+console.log('🔄 Starting payment process:', { transactionId, amount })
+console.log('🎉 Payment successful:', responseData)
+console.log('❌ Payment failed:', error)
+console.log('⚠️ Warning:', warningMessage)
+```
+
+### State Debugging
+```typescript
+// Add debugging for state changes
+useEffect(() => {
+  console.log('Payment state changed:', { 
+    step, 
+    isAuthenticating, 
+    deviceDataCollected,
+    cardinalSessionId 
+  })
+}, [step, isAuthenticating, deviceDataCollected, cardinalSessionId])
+```
+
+### Network Request Debugging
+```typescript
+// Log all API requests and responses
+const response = await fetch(endpoint, requestOptions)
+console.log('API Request:', { endpoint, requestOptions })
+
+const data = await response.json()
+console.log('API Response:', { status: response.status, data })
+```
+
+## Common Error Scenarios
+
+### Backend API Errors
+- **Token Expired**: Refresh checkout token
+- **Invalid Amount**: Check currency and amount formatting
+- **3DS Required**: Ensure challenge flow is properly handled
+- **Network Timeout**: Implement retry logic
+
+### Frontend Integration Errors
+- **Script Loading Failed**: Check CDN availability and integrity
+- **CORS Issues**: Verify origin configuration
+- **Iframe Loading Problems**: Check Content Security Policy
+- **State Synchronization**: Ensure proper state updates
+
+### 3D Secure Specific Issues
+- **Challenge Not Triggering**: Verify enrollment check response
+- **Challenge Completion**: Check postMessage handling
+- **Authentication Timeout**: Implement proper timeout handling
+- **Invalid Authentication**: Verify transaction IDs match
+
+## Environment-Specific Debugging
+
+### Development Environment
+- **Local API**: Ensure backend is running on correct port
+- **CORS Configuration**: Allow localhost origins
+- **Console Logging**: Enable detailed logging
+- **Network Tab**: Monitor all network requests
+
+### Production Environment
+- **Error Reporting**: Implement comprehensive error tracking
+- **Performance Monitoring**: Track payment completion times
+- **Security Logging**: Monitor for security issues
+- **User Experience**: Track abandonment rates
+
+## Debugging Tools & Techniques
+
+### Browser Developer Tools
+- **Console**: Monitor JavaScript errors and logs
+- **Network**: Track API calls and responses
+- **Application**: Check localStorage and session storage
+- **Security**: Monitor mixed content and CORS issues
+
+### Payment-Specific Debugging
+- **Cybersource Logs**: Check merchant dashboard logs
+- **Cardinal Commerce**: Monitor device data collection
+- **3DS Logs**: Track authentication attempts
+- **Transaction Tracing**: Follow payment through entire flow
+
+## Error Recovery Patterns
+
+### Graceful Fallbacks
+```typescript
+// Example error recovery
+try {
+  await processPayment()
+} catch (error) {
+  // Log error for debugging
+  console.error('Payment failed:', error)
+  
+  // Reset to safe state
+  setStep('form')
+  setIsAuthenticating(false)
+  
+  // Inform user
+  toast.error('Payment failed. Please try again.')
+}
+```
+
+### State Reset Strategies
+```typescript
+// Reset all payment-related state
+const resetPaymentState = () => {
+  setStep('form')
+  setPaymentToken(null)
+  setTransactionId(null)
+  setDeviceDataCollected(false)
+  setCardinalSessionId(null)
+  autoPaymentTriggeredRef.current = false
+}
+```
+
+## Testing & Validation
+
+### Manual Testing Checklist
+- [ ] Payment form loads correctly
+- [ ] Card tokenization works
+- [ ] Device data collection completes
+- [ ] 3DS challenge appears when required
+- [ ] Payment completion works
+- [ ] Error handling works properly
+
+### Automated Testing
+- Mock external services for consistent testing
+- Test error scenarios and edge cases
+- Validate state transitions
+- Check UI feedback and messaging
+
+## Key Debugging Locations
+- **Payment Form**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx) - Lines 140-280 (initialization)
+- **Challenge Handling**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx) - Lines 420-520 (3DS flow)
+- **API Integration**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx) - Lines 300-400 (backend calls)
+- **State Management**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx) - Lines 40-80 (state definitions)
+

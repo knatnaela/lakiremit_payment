@@ -14,27 +14,67 @@ import {
   CardinalCommerceMessage,
   EnrollmentCheckRequest,
   EnrollmentCheckResponse,
-  ChallengeRequest
+  ChallengeRequest,
+  FlexTokenPayload
 } from '@/types/payment'
 import ChallengeIframe from './ChallengeIframe'
 import { CardinalCommerceListener } from './CardinalCommerceListener'
+import { decodeJWT } from '@/utils/utils'
+import AddressForm from './AddressForm'
 
 const CARD_TYPES = {
-  visa: '💳',
-  mastercard: '💳', 
-  amex: '💳',
-  discover: '💳',
-  unknown: '💳'
+  '001': '💳', // Visa
+  '002': '💳', // Mastercard
+  '003': '💳', // American Express
+  '004': '💳', // Discover
+  '005': '💳', // Diners Club
+  '006': '💳', // Carte Blanche
+  '007': '💳', // JCB
+  '014': '💳', // EnRoute
+  '021': '💳', // JAL
+  '024': '💳', // Maestro (UK Domestic)
+  '031': '💳', // Delta
+  '033': '💳', // Visa Electron
+  '034': '💳', // Dankort
+  '036': '💳', // Cartes Bancaires
+  '037': '💳', // Carta Si
+  '039': '💳', // EAN
+  '040': '💳', // UATP
+  '042': '💳', // Maestro (International)
+  '050': '💳', // Hipercard
+  '051': '💳', // Aura
+  '054': '💳', // Elo
+  '062': '💳', // China UnionPay
+  'unknown': '💳'
 }
 
-const COUNTRIES = [
-  { code: 'US', name: 'United States' },
-  { code: 'CA', name: 'Canada' },
-  { code: 'UK', name: 'United Kingdom' },
-  { code: 'PH', name: 'Philippines' },
-  { code: 'IN', name: 'India' },
-  { code: 'MX', name: 'Mexico' },
-]
+// Card type mapping for Cybersource
+const CARD_TYPE_CODES = {
+  '001': 'Visa',
+  '002': 'Mastercard', 
+  '003': 'American Express',
+  '004': 'Discover',
+  '005': 'Diners Club',
+  '006': 'Carte Blanche',
+  '007': 'JCB',
+  '014': 'EnRoute',
+  '021': 'JAL',
+  '024': 'Maestro (UK Domestic)',
+  '031': 'Delta',
+  '033': 'Visa Electron',
+  '034': 'Dankort',
+  '036': 'Cartes Bancaires',
+  '037': 'Carta Si',
+  '039': 'EAN',
+  '040': 'UATP',
+  '042': 'Maestro (International)',
+  '050': 'Hipercard',
+  '051': 'Aura',
+  '054': 'Elo',
+  '062': 'China UnionPay'
+}
+
+// Countries are now handled by the AddressForm component
 
 export default function PaymentForm() {
   const [microformInstance, setMicroformInstance] = useState<MicroformInstance | null>(null)
@@ -42,12 +82,14 @@ export default function PaymentForm() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [paymentToken, setPaymentToken] = useState<string | null>(null)
   const [cardType, setCardType] = useState<string>('unknown')
-  const [step, setStep] = useState<'form' | 'processing' | '3ds-verification' | 'success'>('form')
+  const [step, setStep] = useState<'form' | 'processing' | '3ds-verification' | 'success' | 'failed'>('form')
   const [transactionId, setTransactionId] = useState<string | null>(null)
   const [deviceDataCollected, setDeviceDataCollected] = useState(false)
   const [cardinalSessionId, setCardinalSessionId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const [clientIpAddress, setClientIpAddress] = useState<string>('')
+  const [checkoutToken, setCheckoutToken] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   
   // 3D Secure Authentication States
   const [isAuthenticating, setIsAuthenticating] = useState(false)
@@ -71,6 +113,7 @@ export default function PaymentForm() {
   const [pareq, setPareq] = useState<string | null>(null);
   const autoPaymentTriggeredRef = useRef(false);
   const [isCollectingDeviceData, setIsCollectingDeviceData] = useState(false)
+  const initializationStartedRef = useRef(false);
 
   const cardNumberRef = useRef<HTMLDivElement>(null)
   const cvvRef = useRef<HTMLDivElement>(null)
@@ -113,19 +156,71 @@ export default function PaymentForm() {
     handleSubmit,
     formState: { errors },
     watch,
-    setValue
+    setValue,
+    control
   } = useForm<PaymentFormData>({
     defaultValues: {
       currency: 'USD',
-      country: 'US'
+      billing: {
+        country: 'US',
+        address: '',
+        city: '',
+        state: '',
+        postalCode: '',
+        address2: ''
+      }
     }
   })
 
   const amount = watch('amount')
   const currency = watch('currency')
+  const billingCountry = watch('billing.country')
+  
+  // Debug: Log form values
+  useEffect(() => {
+    console.log('📝 Form values:', {
+      amount,
+      currency,
+      billingCountry,
+      billing: watch('billing')
+    })
+  }, [amount, currency, billingCountry, watch])
+
+  // Helper function to get card type name
+  const getCardTypeName = (cardTypeCode: string) => {
+    return CARD_TYPE_CODES[cardTypeCode as keyof typeof CARD_TYPE_CODES] || 'Unknown'
+  }
+
+  // Helper function to extract address data from form
+  const getAddressData = (data: PaymentFormData) => {
+    // Handle both flat and nested billing structures
+    if (data.billing) {
+      return {
+        billToAddress1: data.billing.address,
+        billToCity: data.billing.city,
+        billToState: data.billing.state,
+        billToPostalCode: data.billing.postalCode,
+        billToCountry: data.billing.country
+      }
+    }
+    return {
+      billToAddress1: data.address,
+      billToCity: data.city,
+      billToState: data.state,
+      billToPostalCode: data.postalCode,
+      billToCountry: data.country
+    }
+  }
 
   // Initialize Cybersource Microform
   useEffect(() => {
+    // Prevent duplicate initialization
+    if (isInitialized || checkoutToken || initializationStartedRef.current) {
+      console.log('🔄 Skipping initialization - already initialized, token exists, or initialization in progress')
+      return
+    }
+    
+    initializationStartedRef.current = true
     console.log('🔄 useEffect triggered - starting initialization')
     
     const decodeJWT = (token: string) => {
@@ -185,6 +280,7 @@ export default function PaymentForm() {
     
     const initializeMicroform = async () => {
       try {
+        console.log('🔄 Initializing microform - getting checkout token...')
         // Get microform token from backend
         const response = await fetch('http://localhost:8080/api/v1/payment/checkout-token', {
           method: 'POST',
@@ -203,6 +299,10 @@ export default function PaymentForm() {
         if (!data.token) {
           throw new Error('No token received from backend API')
         }
+        
+        // Store the checkout token for later use
+        setCheckoutToken(data.token)
+        console.log('✅ Checkout token received and stored')
         
         // Decode JWT to get script URL and integrity
         const decodedJWT = decodeJWT(data.token)
@@ -318,7 +418,7 @@ export default function PaymentForm() {
       const cardinalListener = CardinalCommerceListener.getInstance();
       cardinalListener.stopListening();
     }
-  }, [])
+  }, [mounted]) // Only run when mounted changes
 
   // Process payment with collected device data
   const processPaymentWithDeviceData = async (sessionId: string, data: PaymentFormData) => {
@@ -336,10 +436,15 @@ export default function PaymentForm() {
         merchantReference: merchantReference || 'order-' + Date.now(),
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: false,
+        // Card type information
+        cardType: cardType,
+        cardTypeName: getCardTypeName(cardType),
         // Personal information
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email,
+        // Billing address information
+        ...getAddressData(data),
         // Device information
         ...deviceInfo
       }
@@ -383,22 +488,13 @@ export default function PaymentForm() {
             fingerprintSessionId: deviceInfo.fingerprintSessionId,
             firstName: data.firstName,
             lastName: data.lastName,
-            email: data.email
+            email: data.email,
+            // Billing address information
+            ...getAddressData(data)
           };
           localStorage.setItem('challengeData', JSON.stringify(challengeData));
           
-          console.log('Payment Response:', paymentData);
-          console.log('Step Up URL:', stepUpUrl);
-          console.log('Access Token:', accessToken);
-          console.log('Pareq:', pareqValue);
-          
           if (stepUpUrl && pareqValue && accessToken) {
-            console.log('Starting 3DS Challenge:', {
-              stepUpUrl,
-              accessToken,
-              authTransactionId,
-              merchantRef
-            });
             
             setStep('3ds-verification'); // Set step to 3DS verification
             setChallengeStepUpUrl(stepUpUrl)
@@ -411,12 +507,16 @@ export default function PaymentForm() {
             throw new Error('Missing challenge data from payment response')
         }
         }
-      }else {
-        throw new Error(responseData.error || 'Payment failed')
+      } else {
+        const errorMsg = responseData.error || responseData.message || 'Payment failed';
+        throw new Error(errorMsg);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Payment failed')
-      setStep('form')
+      console.error('❌ Payment failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Payment failed';
+      setErrorMessage(errorMsg);
+      setStep('failed');
+      toast.error(errorMsg);
     } finally {
       setIsAuthenticating(false)
     }
@@ -636,7 +736,14 @@ export default function PaymentForm() {
             return
           }
           tokenizedToken = token;
-          setCardType('unknown');
+          const decodedToken: FlexTokenPayload = decodeJWT(token);
+          const detectedCardTypes = decodedToken.content.paymentInformation.card.number.detectedCardTypes;
+          const cardTypeCode = detectedCardTypes?.[0] || '001';
+          setCardType(cardTypeCode);
+          
+          // Log detected card type for debugging
+          const cardTypeName = CARD_TYPE_CODES[cardTypeCode as keyof typeof CARD_TYPE_CODES] || 'Unknown';
+          console.log(`💳 Detected card type: ${cardTypeName} (Code: ${cardTypeCode})`);
           resolve()
         })
       })
@@ -657,6 +764,7 @@ export default function PaymentForm() {
       }
 
       // Step 3: Submit to backend for authentication setup
+      // Use the existing checkout token from initialization instead of generating a new one
       const authSetupRequest = {
         transientToken: tokenizedToken,
         cardHolder: `${data.firstName} ${data.lastName}`,
@@ -667,11 +775,17 @@ export default function PaymentForm() {
         merchantReference: 'order-' + Date.now(),
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: data.saveCard || false,
+        // Card type information
+        cardType: cardType,
+        cardTypeName: getCardTypeName(cardType),
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email
+        email: data.email,
+        // Billing address information
+        ...getAddressData(data)
       }
 
+      console.log('🔄 Calling authentication setup with existing token...')
       const authResponse = await fetch('http://localhost:8080/api/v1/payment/combined-init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -679,6 +793,7 @@ export default function PaymentForm() {
       })
 
       const authResponseData = await authResponse.json()
+      console.log('🔍 Authentication setup response:', authResponseData)
 
       if (authResponseData.result !== 'SUCCESS') {
         throw new Error(authResponseData.error || 'Authentication setup failed')
@@ -738,6 +853,8 @@ export default function PaymentForm() {
 
   const handleChallengeComplete = async (transactionId: string, md?: string) => {
     try {
+      console.log('🔄 Processing challenge completion...', { transactionId, md });
+      
       // Get stored payment data from localStorage
       const storedChallengeData = localStorage.getItem('challengeData');
       if (!storedChallengeData) {
@@ -758,6 +875,7 @@ export default function PaymentForm() {
       });
 
       const responseData = await response.json();
+      console.log('🔍 Challenge completion response:', responseData);
 
       if (responseData.result === 'SUCCESS') {
         setStep('success');
@@ -767,11 +885,15 @@ export default function PaymentForm() {
         // Clear stored payment data
         localStorage.removeItem('challengeData');
       } else {
-        throw new Error(responseData.error || 'Payment completion failed');
+        const errorMsg = responseData.error || responseData.message || 'Payment completion failed';
+        throw new Error(errorMsg);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Payment completion failed');
-      setStep('form');
+      console.error('❌ Challenge completion failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Payment completion failed';
+      setErrorMessage(errorMsg);
+      setStep('failed');
+      toast.error(errorMsg);
     } finally {
       // Reset challenge-related states
       setShowChallenge(false);
@@ -833,8 +955,10 @@ export default function PaymentForm() {
           handleChallengeComplete(transactionId, md);
         } else if (status === 'error') {
           console.error('❌ 3DS Challenge failed via postMessage:', error);
-          toast.error('3D Secure verification failed');
-          setStep('form');
+          const errorMsg = error || '3D Secure verification failed';
+          setErrorMessage(errorMsg);
+          setStep('failed');
+          toast.error(errorMsg);
         }
       } else if (event.data?.type === '3ds-callback') {
         // Legacy callback handling
@@ -844,8 +968,10 @@ export default function PaymentForm() {
           // Use window.location.href instead of router.push
           window.location.href = `/challenge-processing?TransactionId=${transactionId}&MD=${md}`;
         } else {
-          toast.error('3D Secure verification failed');
-          setStep('form');
+          const errorMsg = '3D Secure verification failed';
+          setErrorMessage(errorMsg);
+          setStep('failed');
+          toast.error(errorMsg);
         }
       }
     };
@@ -865,9 +991,16 @@ export default function PaymentForm() {
     setPaymentToken(null)
     setTransactionId(null)
     setCardType('unknown')
+    setErrorMessage(null)
     autoPaymentTriggeredRef.current = false
     setDeviceDataCollected(false)
     setCardinalSessionId(null)
+    setCheckoutToken(null)
+    setIsInitialized(false)
+    initializationStartedRef.current = false
+    
+    // Reload the page to get a fresh start
+    window.location.reload()
   }
 
   if (step === 'success') {
@@ -891,6 +1024,28 @@ export default function PaymentForm() {
             className="btn-primary"
           >
             Make Another Payment
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'failed') {
+    return (
+      <div className="card p-8">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-4">
+            <AlertCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Failed</h2>
+          <p className="text-gray-600 mb-4">
+            {errorMessage || 'Your payment could not be processed. Please try again.'}
+          </p>
+          <button
+            onClick={resetForm}
+            className="btn-primary"
+          >
+            Try Again
           </button>
         </div>
       </div>
@@ -1110,13 +1265,21 @@ export default function PaymentForm() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="form-label">
-              Card Number * {CARD_TYPES[cardType as keyof typeof CARD_TYPES]}
+              Card Number * {CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES] ? 
+                `${CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]} 💳` : 
+                '💳'}
             </label>
             <div
               ref={cardNumberRef}
               className="microform-field bg-white"
               style={{ minHeight: '48px' }}
             />
+            {cardType !== 'unknown' && CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES] && (
+              <div className="mt-2 text-sm text-green-600 flex items-center">
+                <CheckCircle className="h-4 w-4 mr-1" />
+                {CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]} detected
+              </div>
+            )}
             {mounted && !isInitialized && (
               <div className="flex items-center mt-2 text-sm text-gray-500">
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1183,74 +1346,14 @@ export default function PaymentForm() {
       </div>
 
       {/* Billing Address */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Billing Address
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label htmlFor="country" className="form-label">
-              Country *
-            </label>
-            <select
-              id="country"
-              className="form-input"
-              {...register('country', { required: 'Country is required' })}
-            >
-              {COUNTRIES.map(country => (
-                <option key={country.code} value={country.code}>
-                  {country.name}
-                </option>
-              ))}
-            </select>
-            {errors.country && (
-              <p className="form-error">{errors.country.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="city" className="form-label">
-              City
-            </label>
-            <input
-              id="city"
-              type="text"
-              className="form-input"
-              placeholder="New York"
-              {...register('city')}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="address" className="form-label">
-              Address
-            </label>
-            <input
-              id="address"
-              type="text"
-              className="form-input"
-              placeholder="123 Main Street"
-              {...register('address')}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="postalCode" className="form-label">
-              Postal Code
-            </label>
-            <input
-              id="postalCode"
-              type="text"
-              className="form-input"
-              placeholder="12345"
-              {...register('postalCode')}
-            />
-          </div>
-        </div>
-      </div>
+      <AddressForm 
+        name="billing" 
+        required={true}
+        control={control}
+        watch={watch}
+        setValue={setValue}
+        errors={errors}
+      />
 
 
 

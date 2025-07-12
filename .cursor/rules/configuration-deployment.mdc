@@ -1,0 +1,244 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Configuration & Deployment Guide
+
+## Environment Setup
+
+### Development Environment
+- **Node.js**: Latest LTS version required
+- **Next.js**: React framework for SSR/SSG
+- **Backend API**: Runs on `localhost:8080`
+- **Frontend Dev**: Runs on `localhost:3000`
+
+### Required Dependencies
+```json
+{
+  "dependencies": {
+    "react": "latest",
+    "react-hook-form": "^7.x",
+    "react-hot-toast": "^2.x",
+    "lucide-react": "latest"
+  }
+}
+```
+
+### Environment Variables
+Create `.env.local` file based on [env.example](mdc:env.example):
+```env
+# Cybersource Configuration
+CYBERSOURCE_MERCHANT_ID=your_merchant_id
+CYBERSOURCE_API_KEY=your_api_key
+CYBERSOURCE_SECRET_KEY=your_secret_key
+CYBERSOURCE_ENVIRONMENT=sandbox # or production
+
+# API Configuration
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Cardinal Commerce Configuration
+CARDINAL_COMMERCE_API_KEY=your_cardinal_key
+CARDINAL_COMMERCE_API_IDENTIFIER=your_cardinal_identifier
+```
+
+## Configuration Files
+
+### Next.js Configuration
+**File**: [next.config.js](mdc:next.config.js)
+```javascript
+module.exports = {
+  // Security headers for payment processing
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'self' https://cardinalcommerce.com https://centinelapi.cardinalcommerce.com"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Tailwind Configuration
+**File**: [tailwind.config.js](mdc:tailwind.config.js)
+- Custom color schemes for payment UI
+- Responsive breakpoints
+- Form styling utilities
+
+### TypeScript Configuration
+**File**: [tsconfig.json](mdc:tsconfig.json)
+- Strict type checking enabled
+- Path aliases for clean imports
+- Payment-specific type definitions
+
+## API Endpoints Configuration
+
+### Backend Integration Points
+```typescript
+// API Configuration
+const API_ENDPOINTS = {
+  CHECKOUT_TOKEN: '/api/v1/payment/checkout-token',
+  COMBINED_PAYMENT: '/api/v1/payment/combined',
+  COMBINED_INIT: '/api/v1/payment/combined-init',
+  COMBINED_AFTER_CHALLENGE: '/api/v1/payment/combined-after-challenge'
+}
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'
+```
+
+### Frontend API Routes
+- `/api/payment/challenge-result/` - 3DS challenge callback
+- `/app/challenge-processing/` - Challenge processing page
+- `/app/payment/3ds-callback/` - 3DS callback handler
+
+## Security Configuration
+
+### CORS Settings
+```javascript
+// Backend CORS configuration
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'https://yourdomain.com'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}
+```
+
+### Content Security Policy
+```javascript
+// CSP for payment processing
+const csp = {
+  'default-src': "'self'",
+  'script-src': "'self' 'unsafe-inline' https://flex.cybersource.com",
+  'frame-src': "'self' https://centinelapi.cardinalcommerce.com",
+  'connect-src': "'self' https://api.cybersource.com https://cardinalcommerce.com",
+  'img-src': "'self' data: https:",
+  'style-src': "'self' 'unsafe-inline'"
+}
+```
+
+## Deployment Considerations
+
+### Production Environment Setup
+1. **Environment Variables**: Set production values
+2. **SSL Certificate**: Required for payment processing
+3. **Domain Configuration**: Update CORS and callback URLs
+4. **CDN Configuration**: Serve static assets efficiently
+
+### Cybersource Configuration
+- **Merchant ID**: Production merchant account
+- **API Keys**: Production credentials
+- **Webhook URLs**: Production callback endpoints
+- **Security Keys**: Proper key management
+
+### Cardinal Commerce Setup
+- **API Identifier**: Production identifier
+- **JWT Configuration**: Production signing keys
+- **Callback URLs**: Production challenge completion URLs
+
+### Performance Optimization
+- **Script Loading**: Optimize Cybersource SDK loading
+- **Bundle Splitting**: Separate payment logic
+- **Caching**: Cache non-sensitive configuration
+- **Monitoring**: Track payment completion rates
+
+## Monitoring & Logging
+
+### Payment Flow Monitoring
+```typescript
+// Production logging configuration
+const logPaymentEvent = (event: string, data: any) => {
+  if (process.env.NODE_ENV === 'production') {
+    // Send to logging service
+    analyticsService.track('payment_event', {
+      event,
+      timestamp: new Date().toISOString(),
+      ...data
+    })
+  } else {
+    console.log(`Payment Event: ${event}`, data)
+  }
+}
+```
+
+### Error Tracking
+- **Sentry Integration**: Comprehensive error tracking
+- **Payment Failures**: Track failure reasons
+- **Performance Metrics**: Monitor payment completion times
+- **Security Events**: Log authentication attempts
+
+## Testing Configuration
+
+### Test Environment Setup
+- **Mock Services**: Mock Cybersource and Cardinal Commerce
+- **Test Cards**: Use official test card numbers
+- **Sandbox Environment**: Cybersource sandbox configuration
+- **Local Testing**: Development environment setup
+
+### CI/CD Pipeline
+```yaml
+# Example GitHub Actions workflow
+name: Payment System Tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Build application
+        run: npm run build
+```
+
+## Database Configuration
+
+### Payment Data Storage
+- **Transaction Records**: Store transaction metadata
+- **User Data**: Secure user information storage
+- **Audit Logs**: Track all payment activities
+- **Challenge Data**: Temporary storage for 3DS challenges
+
+### Data Security
+- **Encryption**: Encrypt sensitive data at rest
+- **PCI Compliance**: Follow PCI DSS requirements
+- **Data Retention**: Implement proper data retention policies
+- **Access Control**: Restrict database access
+
+## Backup & Recovery
+
+### Data Backup Strategy
+- **Database Backups**: Regular automated backups
+- **Configuration Backups**: Version control for configs
+- **Key Management**: Secure key storage and rotation
+- **Recovery Procedures**: Documented recovery processes
+
+### Disaster Recovery
+- **Failover Procedures**: Automated failover mechanisms
+- **Service Dependencies**: Handle third-party service outages
+- **Data Consistency**: Ensure transaction integrity
+- **Communication Plans**: User notification procedures
+
+## Key Configuration Files
+- **Environment**: [env.example](mdc:env.example) - Environment variable template
+- **Next.js**: [next.config.js](mdc:next.config.js) - Framework configuration
+- **Tailwind**: [tailwind.config.js](mdc:tailwind.config.js) - Styling configuration
+- **TypeScript**: [tsconfig.json](mdc:tsconfig.json) - Type checking configuration
+- **Package**: [package.json](mdc:package.json) - Dependencies and scripts
+

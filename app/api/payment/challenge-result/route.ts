@@ -31,58 +31,55 @@ export async function POST(request: NextRequest) {
           <title>3D Secure Authentication Complete</title>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
+          <script src="https://cdn.tailwindcss.com"></script>
+          <script>
+            tailwind.config = {
+              theme: {
+                extend: {
+                  colors: {
+                    primary: {
+                      50: '#eff6ff',
+                      500: '#3b82f6',
+                      600: '#2563eb',
+                      700: '#1d4ed8',
+                    },
+                    success: '#10b981',
+                    error: '#ef4444',
+                  }
+                }
+              }
+            }
+          </script>
           <style>
-            body {
-              font-family: Arial, sans-serif;
-              text-align: center;
-              padding: 40px 20px;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: white;
-              margin: 0;
-              min-height: 100vh;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .container {
-              background: rgba(255, 255, 255, 0.1);
-              padding: 30px;
-              border-radius: 10px;
-              backdrop-filter: blur(10px);
-              box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            }
-            .success-icon {
-              font-size: 48px;
-              margin-bottom: 20px;
-            }
-            h1 {
-              margin: 0 0 10px 0;
-              font-size: 24px;
-            }
-            p {
-              margin: 0 0 20px 0;
-              opacity: 0.9;
-            }
-            .loading {
-              display: inline-block;
-              width: 20px;
-              height: 20px;
-              border: 3px solid rgba(255, 255, 255, 0.3);
-              border-radius: 50%;
-              border-top-color: white;
-              animation: spin 1s ease-in-out infinite;
-            }
             @keyframes spin {
               to { transform: rotate(360deg); }
             }
+            .animate-spin {
+              animation: spin 1s linear infinite;
+            }
           </style>
         </head>
-        <body>
-          <div class="container">
-            <div class="success-icon">✅</div>
-            <h1>Authentication Complete</h1>
-            <p>Your payment is being processed...</p>
-            <div class="loading"></div>
+        <body class="bg-gray-50 font-sans antialiased">
+          <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-lg border border-gray-200 p-8 max-w-md w-full">
+              <div class="text-center">
+                <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 mb-4">
+                  <svg class="h-8 w-8 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                  </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Verifying Payment</h2>
+                <p class="text-gray-600 mb-4">
+                  Please wait while we verify your payment with your bank...
+                </p>
+                <div class="flex items-center justify-center space-x-2 text-sm text-gray-500">
+                  <svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                  </svg>
+                  <span>Verifying with your bank...</span>
+                </div>
+              </div>
+            </div>
           </div>
           
           <script>
@@ -141,13 +138,7 @@ export async function POST(request: NextRequest) {
           'Content-Security-Policy': "frame-ancestors 'self'"
         }
       })
-    // } else {
-    //   // Direct navigation - redirect to challenge processing
-    //   const redirectUrl = `http://localhost:3000/challenge-processing?TransactionId=${transactionId}&MD=${md}&Status=${status || 'success'}`
-    //   console.log('🔄 Redirecting to:', redirectUrl)
-      
-    //   return NextResponse.redirect(redirectUrl)
-    // }
+    
   } catch (error) {
     console.error('❌ Error in challenge-result:', error)
     
@@ -158,36 +149,42 @@ export async function POST(request: NextRequest) {
       <head>
         <title>Authentication Error</title>
         <meta charset="utf-8">
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 40px 20px;
-            background: #f8d7da;
-            color: #721c24;
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+          tailwind.config = {
+            theme: {
+              extend: {
+                colors: {
+                  primary: {
+                    50: '#eff6ff',
+                    500: '#3b82f6',
+                    600: '#2563eb',
+                    700: '#1d4ed8',
+                  },
+                  success: '#10b981',
+                  error: '#ef4444',
+                }
+              }
+            }
           }
-          .container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-          }
-          .error-icon {
-            font-size: 48px;
-            margin-bottom: 20px;
-          }
-        </style>
+        </script>
       </head>
-      <body>
-        <div class="container">
-          <div class="error-icon">❌</div>
-          <h1>Authentication Failed</h1>
-          <p>Something went wrong during authentication.</p>
+      <body class="bg-gray-50 font-sans antialiased">
+        <div class="min-h-screen flex items-center justify-center p-4">
+          <div class="bg-white rounded-xl shadow-lg border border-gray-200 p-8 max-w-md w-full">
+            <div class="text-center">
+              <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-4">
+                <svg class="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </div>
+              <h2 class="text-2xl font-bold text-gray-900 mb-2">Authentication Failed</h2>
+              <p class="text-gray-600 mb-4">
+                Something went wrong during authentication. Please try again.
+              </p>
+            </div>
+          </div>
         </div>
         
         <script>

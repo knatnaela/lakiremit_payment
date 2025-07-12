@@ -1,0 +1,137 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Development Patterns & Conventions
+
+## React Patterns Used
+
+### State Management
+- **useState for UI State**: Form states, loading states, modal visibility
+- **useRef for DOM References**: Microform field containers, avoiding re-renders
+- **useEffect for Side Effects**: API calls, event listeners, cleanup
+- **Custom Hooks**: Encapsulated logic for payment operations
+
+### Form Handling
+- **React Hook Form**: Primary form library for validation and data management
+- **Validation Strategy**: Real-time validation with clear error messages
+- **Form Structure**: Multi-section forms with conditional rendering
+
+### Component Structure
+```typescript
+// Standard component pattern used throughout
+export default function ComponentName() {
+  const [state, setState] = useState()
+  const ref = useRef()
+  
+  useEffect(() => {
+    // Initialization and cleanup
+  }, [])
+  
+  const handleOperation = async () => {
+    // Async operations with error handling
+  }
+  
+  return (
+    // JSX with conditional rendering
+  )
+}
+```
+
+## Integration Patterns
+
+### Third-Party Library Integration
+- **Dynamic Script Loading**: Cybersource Flex SDK loading with integrity checks
+- **Event Listeners**: Cardinal Commerce message handling with cleanup
+- **Cross-Origin Communication**: PostMessage API for iframe communication
+
+### API Integration Pattern
+```typescript
+// Standard API call pattern
+const response = await fetch(endpoint, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload)
+})
+
+const data = await response.json()
+
+if (data.result === 'SUCCESS') {
+  // Success handling
+} else {
+  throw new Error(data.error || 'Operation failed')
+}
+```
+
+### Error Handling Conventions
+- **Try-Catch Blocks**: Comprehensive error boundaries
+- **Toast Notifications**: User-friendly error messages
+- **Graceful Fallbacks**: Alternative flows when services fail
+- **State Reset**: Return to safe states on errors
+
+## Security Patterns
+
+### Token Management
+- **Transient Tokens**: Short-lived tokens for card operations
+- **Secure Storage**: localStorage only for non-sensitive challenge data
+- **Token Validation**: JWT decoding for configuration extraction
+
+### Input Validation
+- **Client-Side**: Real-time validation for UX
+- **Server-Side**: Backend validation for security
+- **Sanitization**: Proper input cleaning and formatting
+
+## Code Organization
+
+### File Structure Conventions
+- **Component Files**: PascalCase naming (PaymentForm.tsx)
+- **Hook Files**: camelCase with 'use' prefix (usePayment.ts)
+- **Type Files**: Descriptive names (payment.ts, user.ts)
+- **Service Files**: Functional naming (api.ts, utils.ts)
+
+### Import Organization
+```typescript
+// External libraries first
+import { useState, useEffect } from 'react'
+import { useForm } from 'react-hook-form'
+
+// Internal imports
+import { PaymentFormData } from '@/types/payment'
+import Component from './Component'
+```
+
+### CSS/Styling Patterns
+- **Tailwind Classes**: Utility-first approach
+- **Component-Specific Styles**: Scoped styling for complex components
+- **Responsive Design**: Mobile-first approach with breakpoints
+
+## Performance Optimizations
+
+### Loading Strategies
+- **Script Loading**: Dynamic loading with integrity verification
+- **Lazy Loading**: Components loaded on demand
+- **Memoization**: Prevent unnecessary re-renders
+
+### State Updates
+- **Batch Updates**: Minimize re-renders with proper state structure
+- **Ref Usage**: Avoid re-renders for DOM references
+- **Cleanup**: Proper cleanup of event listeners and timeouts
+
+## Testing Patterns
+
+### Component Testing
+- **Unit Tests**: Individual component functionality
+- **Integration Tests**: Component interaction testing
+- **Mock Services**: External service mocking
+
+### Payment Flow Testing
+- **Happy Path**: Successful payment completion
+- **Error Scenarios**: Various failure modes
+- **3DS Flows**: Challenge completion scenarios
+
+## Key Files
+- **Main Component**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx)
+- **Challenge Handler**: [components/ChallengeIframe.tsx](mdc:components/ChallengeIframe.tsx)
+- **Cardinal Listener**: [components/CardinalCommerceListener.tsx](mdc:components/CardinalCommerceListener.tsx)
+

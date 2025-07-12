@@ -1,0 +1,86 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Payment System Architecture Guide
+
+## Project Overview
+This is a Next.js payment processing application integrated with Cybersource for secure payment processing and 3D Secure authentication.
+
+## Key Components
+
+### Main Payment Form
+- **Primary Component**: [components/PaymentForm.tsx](mdc:components/PaymentForm.tsx) - The main payment form handling the entire payment flow
+- **Payment States**: form → processing → 3ds-verification → success
+- **Integration**: Cybersource Microform for secure card tokenization
+
+### Payment Flow Architecture
+1. **Card Tokenization**: Uses Cybersource Microform to securely tokenize card details
+2. **Device Data Collection**: Cardinal Commerce integration for fraud prevention
+3. **3D Secure Challenge**: Handles bank verification when required
+4. **Payment Processing**: Backend API calls for payment completion
+
+### API Routes Structure
+- `/api/payment/challenge-result/` - Handles 3D Secure challenge callbacks
+- `/app/challenge-processing/` - Challenge processing page
+- `/app/payment/3ds-callback/` - 3D Secure callback handler
+- `/app/payment/challenge/` - Challenge initiation
+- `/app/payment/process-challenge/` - Challenge completion
+
+### Component Organization
+- `components/payment/` - Payment-related components
+  - `hooks/` - Payment-specific React hooks
+  - `sections/` - UI sections for payment flow
+  - `services/` - Payment service integrations
+  - `states/` - State management for payment flow
+
+### Backend Integration Endpoints
+- `http://localhost:8080/api/v1/payment/checkout-token` - Get payment token
+- `http://localhost:8080/api/v1/payment/combined` - Process payment
+- `http://localhost:8080/api/v1/payment/combined-init` - Initialize 3DS
+- `http://localhost:8080/api/v1/payment/combined-after-challenge` - Complete after 3DS
+
+## Key Integration Patterns
+
+### Cybersource Microform Integration
+- **Token Generation**: Secure card tokenization without storing card data
+- **Field Loading**: Dynamic loading of secure card input fields
+- **Validation**: Real-time card validation and error handling
+
+### Cardinal Commerce (3D Secure)
+- **Device Data Collection**: Fraud prevention through device fingerprinting
+- **Challenge Flow**: Bank verification when required by issuer
+- **Session Management**: Tracking verification sessions
+
+### State Management Pattern
+- **Multi-step Flow**: Form → Processing → 3DS → Success
+- **Error Handling**: Comprehensive error states and user feedback
+- **Data Persistence**: localStorage for challenge data retention
+
+## Development Guidelines
+
+### Security Best Practices
+- Never store card details in application state
+- Use secure tokenization for all card operations
+- Implement proper CORS and origin validation
+- Handle sensitive data only through secure channels
+
+### Error Handling Strategy
+- Toast notifications for user feedback
+- Graceful fallbacks for service failures
+- Comprehensive validation at each step
+- Clear error messages for user guidance
+
+### Testing Considerations
+- Mock Cardinal Commerce responses
+- Test 3D Secure challenge flows
+- Validate tokenization error scenarios
+- Verify payment completion flows
+
+## File References
+- **Types**: [types/payment.ts](mdc:types/payment.ts) - Payment-related TypeScript definitions
+- **Constants**: [constants/](mdc:constants) - Application constants
+- **Utils**: [utils/](mdc:utils) - Utility functions
+- **Config**: [next.config.js](mdc:next.config.js) - Next.js configuration
+

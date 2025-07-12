@@ -60,11 +60,7 @@ export class CardinalCommerceListener {
       this.handleCardinalCommerceMessage(event);
     } else if (flexOrigins.includes(event.origin)) {
       this.handleFlexMessage(event);
-    } else {
-      console.log('⚠️ Message from unexpected origin:', event.origin)
-      console.log('⚠️ Expected Cardinal origins:', cardinalOrigins)
-      console.log('⚠️ Expected Flex origins:', flexOrigins)
-    }
+    } 
   }
 
   private handleCardinalCommerceMessage(event: MessageEvent) {

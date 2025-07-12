@@ -54,4 +54,33 @@
   width: 100%;
   height: 100%;
   min-height: 400px;
+}
+
+/* React Select styling to match form inputs */
+.react-select-container .react-select__control {
+  @apply border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors;
+}
+
+.react-select-container .react-select__control--is-focused {
+  @apply border-primary-500 ring-2 ring-primary-500;
+}
+
+.react-select-container .react-select__control--is-disabled {
+  @apply bg-gray-50 cursor-not-allowed;
+}
+
+.react-select-container .react-select__menu {
+  @apply border border-gray-200 rounded-lg shadow-lg;
+}
+
+.react-select-container .react-select__option {
+  @apply cursor-pointer;
+}
+
+.react-select-container .react-select__option--is-focused {
+  @apply bg-gray-100;
+}
+
+.react-select-container .react-select__option--is-selected {
+  @apply bg-primary-600 text-white;
 } 

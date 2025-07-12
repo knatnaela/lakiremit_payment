@@ -6,10 +6,22 @@ export interface PaymentFormData {
   currency: string
   expirationMonth: string
   expirationYear: string
+  // Billing address - can be flat or nested
   country: string
-  address?: string
-  city?: string
-  postalCode?: string
+  address: string
+  city: string
+  state: string
+  postalCode: string
+  address2?: string
+  // Nested billing address structure (for AddressForm component)
+  billing?: {
+    country: string
+    address: string
+    city: string
+    state: string
+    postalCode: string
+    address2?: string
+  }
   cardinalSessionId?: string
   paReference?: string
   merchantReference?: string
@@ -102,6 +114,68 @@ export interface ChallengeResponse {
   status: string
   message: string
 }
+
+// {
+//   "iss": "Flex/08",
+//   "exp": 1752347838,
+//   "type": "mf-2.0.0",
+//   "iat": 1752346938,
+//   "jti": "1E5CT8O7GN6IJ3NREYVWEOLF7Q5U931932JG5XMPAABIBBVD8HXF6872B4BEFBAA",
+//   "content": {
+//     "paymentInformation": {
+//       "card": {
+//         "expirationYear": {
+//           "value": "2038"
+//         },
+//         "number": {
+//           "detectedCardTypes": [
+//             "001"
+//           ],
+//           "maskedValue": "XXXXXXXXXXXX2503",
+//           "bin": "400000"
+//         },
+//         "securityCode": {},
+//         "expirationMonth": {
+//           "value": "02"
+//         }
+//       }
+//     }
+//   }
+// }
+
+export interface FlexTokenPayload {
+  iss: string;
+  exp: number;
+  type: string;
+  iat: number;
+  jti: string;
+  content: Content;
+}
+export interface Content {
+  paymentInformation: PaymentInformation;
+}
+export interface PaymentInformation {
+  card: Card;
+}
+export interface Card {
+  expirationYear: ExpirationYearOrExpirationMonth;
+  number: CardNumber;
+  securityCode: SecurityCode;
+  expirationMonth: ExpirationYearOrExpirationMonth;
+}
+export interface ExpirationYearOrExpirationMonth {
+  value: string;
+}
+export interface CardNumber {
+  detectedCardTypes?: string[] | null;
+  maskedValue: string;
+  bin: string;
+}
+export interface SecurityCode {
+}
+
+
+
 
 // Cybersource Flex SDK interfaces (following official documentation)
 export interface FlexConstructor {
