@@ -959,6 +959,47 @@ export default function PaymentForm() {
     window.location.reload()
   }
 
+  const getButtonContent = () => {
+    if (isLoading) {
+      return (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Processing Payment...</span>
+        </>
+      )
+    }
+    if (isAuthenticating) {
+      return (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Verifying Card...</span>
+        </>
+      )
+    }
+    if (isCollectingDeviceData) {
+      return (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Collecting Device Data...</span>
+        </>
+      )
+    }
+    if (deviceDataCollected && cardinalSessionId) {
+      return (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Processing Payment...</span>
+        </>
+      )
+    }
+    return (
+      <>
+        <Lock className="h-5 w-5" />
+        <span>Pay Securely</span>
+      </>
+    )
+  }
+
   if (step === 'success') {
     return (
       <div className="card p-8">
@@ -1221,9 +1262,10 @@ export default function PaymentForm() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="form-label">
-              Card Number * {CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES] ? 
-                `${CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]} 💳` : 
-                '💳'}
+              Card Number * {(() => {
+                const cardTypeName = CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]
+                return cardTypeName ? `${cardTypeName} 💳` : '💳'
+              })()}
             </label>
             <div
               ref={cardNumberRef}
@@ -1368,32 +1410,7 @@ export default function PaymentForm() {
         disabled={isLoading || !isInitialized || isAuthenticating || isCollectingDeviceData || (deviceDataCollected && cardinalSessionId !== null) || autoPaymentTriggeredRef.current}
         className="btn-primary w-full flex items-center justify-center space-x-2"
       >
-        {isLoading ? (
-          <>
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Processing Payment...</span>
-          </>
-        ) : isAuthenticating ? (
-          <>
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Verifying Card...</span>
-          </>
-        ) : isCollectingDeviceData ? (
-          <>
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Collecting Device Data...</span>
-          </>
-        ) : deviceDataCollected && cardinalSessionId ? (
-          <>
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Processing Payment...</span>
-          </>
-        ) : (
-          <>
-            <Lock className="h-5 w-5" />
-            <span>Pay Securely</span>
-          </>
-        )}
+        {getButtonContent()}
       </button>
 
       {mounted && !isInitialized && (
