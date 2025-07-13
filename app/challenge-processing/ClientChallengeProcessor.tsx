@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { CloudCog, Loader2 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { Loader2 } from 'lucide-react'
 
 interface ClientChallengeProcessorProps {
   transactionId: string
@@ -19,8 +18,6 @@ export default function ClientChallengeProcessor({ transactionId, md }: ClientCh
           throw new Error('Payment data not found')
         }
       
-        console.log('Challenge Processing');
-
         const challengeData = JSON.parse(storedChallengeData)
 
         // Send the final payment request to the backend
@@ -50,7 +47,6 @@ export default function ClientChallengeProcessor({ transactionId, md }: ClientCh
         }
 
       } catch (error) {
-        console.error('Challenge processing error:', error)
         const errorMessage = error instanceof Error ? error.message : 'Payment processing failed'
         // Use window.location.href for error redirect
         window.location.href = `/?status=error&message=${encodeURIComponent(errorMessage)}`

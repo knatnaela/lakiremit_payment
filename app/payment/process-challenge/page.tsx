@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,13 +8,11 @@ import toast from 'react-hot-toast'
 export default function ProcessChallenge() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [isProcessing, setIsProcessing] = useState(true)
   
   useEffect(() => {
     const processChallenge = async () => {
       try {
         const transactionId = searchParams?.get('transactionId')
-        const status = searchParams?.get('status')
         const md = searchParams?.get('md')
 
         if (!transactionId) {
@@ -43,13 +41,10 @@ export default function ProcessChallenge() {
         }
 
       } catch (error) {
-        console.error('Challenge processing error:', error)
         toast.error(error instanceof Error ? error.message : 'Payment failed')
         // Redirect back to payment form with error state
         router.push('/payment?error=challenge-failed')
-      } finally {
-        setIsProcessing(false)
-      }
+        } 
     }
 
     processChallenge()

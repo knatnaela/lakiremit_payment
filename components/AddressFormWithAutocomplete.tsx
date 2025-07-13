@@ -20,6 +20,11 @@ interface AddressFormProps {
   googleApiKey?: string
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var google: any;
+}
+
 export default function AddressFormWithAutocomplete({ 
   name = 'billing', 
   required = true,
@@ -32,7 +37,7 @@ export default function AddressFormWithAutocomplete({
   const [isLoadingAutocomplete, setIsLoadingAutocomplete] = useState(false)
   const selectedCountry = watch(`${name}.country`)
   const addressInputRef = useRef<HTMLInputElement>(null)
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null)
+  const autocompleteRef = useRef<any>(null)
 
   // Convert countries data to options format
   useEffect(() => {
@@ -55,7 +60,9 @@ export default function AddressFormWithAutocomplete({
 
   // Load Google Places Autocomplete
   useEffect(() => {
-    if (!enableAutocomplete || !googleApiKey || !addressInputRef.current) return
+    if (!enableAutocomplete || !googleApiKey || !addressInputRef.current) {
+      return
+    }
 
     setIsLoadingAutocomplete(true)
     
@@ -66,8 +73,8 @@ export default function AddressFormWithAutocomplete({
     })
 
     loader.load().then(() => {
-      if (addressInputRef.current) {
-        autocompleteRef.current = new google.maps.places.Autocomplete(addressInputRef.current, {
+      if (addressInputRef.current && window.google && window.google.maps && window.google.maps.places) {
+        autocompleteRef.current = new window.google.maps.places.Autocomplete(addressInputRef.current, {
           types: ['address'],
           componentRestrictions: { country: selectedCountry || undefined }
         })
@@ -79,27 +86,27 @@ export default function AddressFormWithAutocomplete({
             const addressComponents = place.address_components || []
             
             // Extract address parts
-            const streetNumber = addressComponents.find(component => 
+            const streetNumber = addressComponents.find((component: { types: string | string[] }) => 
               component.types.includes('street_number')
             )?.long_name || ''
             
-            const route = addressComponents.find(component => 
+            const route = addressComponents.find((component: { types: string | string[] }) => 
               component.types.includes('route')
             )?.long_name || ''
             
-            const city = addressComponents.find(component => 
+            const city = addressComponents.find((component: { types: string | string[] }) => 
               component.types.includes('locality')
             )?.long_name || ''
             
-            const state = addressComponents.find(component => 
+            const state = addressComponents.find((component: { types: string | string[] }) => 
               component.types.includes('administrative_area_level_1')
             )?.long_name || ''
             
-            const postalCode = addressComponents.find(component => 
+            const postalCode = addressComponents.find((component: { types: string | string[] }) => 
               component.types.includes('postal_code')
             )?.long_name || ''
             
-            const country = addressComponents.find(component => 
+            const country = addressComponents.find((component: { types: string | string[] }) => 
               component.types.includes('country')
             )?.short_name || ''
 
@@ -115,17 +122,17 @@ export default function AddressFormWithAutocomplete({
         setIsAutocompleteLoaded(true)
       }
       setIsLoadingAutocomplete(false)
-    }).catch((error) => {
-      console.error('Failed to load Google Places API:', error)
+    }).catch(() => {
       setIsLoadingAutocomplete(false)
     })
 
     return () => {
-      if (autocompleteRef.current) {
-        google.maps.event.clearInstanceListeners(autocompleteRef.current)
+      if (autocompleteRef.current && window.google && window.google.maps && window.google.maps.event) {
+        window.google.maps.event.clearInstanceListeners(autocompleteRef.current)
       }
     }
   }, [enableAutocomplete, googleApiKey, selectedCountry, name, setValue])
+
 
   return (
     <div className="mb-8">

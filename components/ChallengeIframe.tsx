@@ -38,12 +38,10 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
       const base64 = parts.length === 3 ? parts[1] : parts[0];
       const decoded = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
       const pareqData = JSON.parse(decoded);
-      console.log('Decoded pareq:', pareqData);
       
       const windowSize = pareqData?.challengeWindowSize || '02';
       return CHALLENGE_WINDOW_SIZES[windowSize as keyof typeof CHALLENGE_WINDOW_SIZES];
     } catch (error) {
-      console.error('Error decoding pareq:', error);
       return CHALLENGE_WINDOW_SIZES['02']; // Default to 390x400
     }
   };
@@ -55,25 +53,20 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
   // Handle messages from iframe with origin verification
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      console.log('📡 Message received from iframe:', event.data);
       
       // SECURITY: Verify the origin of the message
       const expectedOrigin = 'http://localhost:3000'; // In production, use your actual domain
       if (event.origin !== expectedOrigin) {
-        console.warn('⚠️ Message from unexpected origin:', event.origin);
         return;
       }
       
       // Handle challenge completion messages
       if (event.data?.type === '3ds-challenge-complete') {
-        const { transactionId, md, status, error } = event.data;
+        const { transactionId, md, status } = event.data;
         
         if (status === 'success' && transactionId) {
-          console.log('🎉 3DS Challenge completed successfully:', { transactionId, md });
           onChallengeComplete(transactionId, md);
         } else if (status === 'error') {
-          console.error('❌ 3DS Challenge failed:', error);
-          // Handle error case - you might want to call onChallengeComplete with error info
           onChallengeComplete('', md);
         }
       }
@@ -85,12 +78,9 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
     // Add event listener
     window.addEventListener('message', handleMessage);
     
-    console.log('🔐 3DS Challenge iframe message listener added');
-    
     return () => {
       if (messageListenerRef.current) {
         window.removeEventListener('message', messageListenerRef.current);
-        console.log('🔐 3DS Challenge iframe message listener removed');
       }
     };
   }, [onChallengeComplete]);
@@ -98,14 +88,15 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
   // Monitor iframe URL changes as backup (optional)
   useEffect(() => {
     const iframe = iframeRef.current;
-    if (!iframe) return;
+    if (!iframe) {
+      return
+    }
 
     const checkIframeUrl = () => {
       try {
         // Check if iframe has navigated to our return URL
         const iframeUrl = iframe.contentWindow?.location.href;
         if (iframeUrl && iframeUrl.includes('/api/payment/challenge-result')) {
-          console.log('✅ Iframe detected return to challenge-result URL:', iframeUrl);
           
           // Extract parameters from the URL
           const url = new URL(iframeUrl);
@@ -113,7 +104,6 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
           const md = url.searchParams.get('MD');
           
           if (transactionId) {
-            console.log('🎉 Challenge completed successfully (URL detection)');
             onChallengeComplete(transactionId, md || undefined);
           }
         }
@@ -137,17 +127,11 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
     }
 
     // Log the values being sent (for debugging)
-    console.log('Submitting to:', stepUpUrl);
-    console.log('JWT value (accessToken):', accessToken);
-    console.log('Iframe dimensions:', dimensions);
-
     if (formRef.current) {
       try {
         hasSubmitted.current = true;
         formRef.current.submit();
-        console.log('✅ Challenge form submitted successfully');
       } catch (error) {
-        console.error('Error submitting form:', error);
         hasSubmitted.current = false;
       }
     }

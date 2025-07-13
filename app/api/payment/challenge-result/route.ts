@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import { type NextRequest } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -9,21 +8,7 @@ export async function POST(request: NextRequest) {
     const md = formData.get('MD')
     const status = formData.get('Status')
 
-    console.log('📥 Challenge result received:', {
-      transactionId,
-      response,
-      md,
-      status,
-      userAgent: request.headers.get('user-agent')
-    })
-
-    // Check if this is coming from an iframe
-    const referer = request.headers.get('referer')
-    // const isIframe = referer && !referer.includes(request.nextUrl.origin)
-
-    // if (isIframe) {
-      // Option A: Return HTML page that uses window.postMessage
-      const baseUrl = 'http://localhost:3000' // In production, use your actual domain
+      const baseUrl = 'http://localhost:3000'
       const html = `
         <!DOCTYPE html>
         <html>
@@ -86,7 +71,6 @@ export async function POST(request: NextRequest) {
             (function() {
               // Security: Verify we're in an iframe
               if (window === window.top) {
-                console.error('❌ This page should only be loaded in an iframe');
                 return;
               }
 
@@ -106,7 +90,6 @@ export async function POST(request: NextRequest) {
               // Send message to parent window
               try {
                 window.parent.postMessage(messageData, targetOrigin);
-                console.log('✅ Challenge completion message sent to parent:', messageData);
                 
                 // Optional: Show success message briefly before closing
                 setTimeout(() => {
@@ -115,14 +98,11 @@ export async function POST(request: NextRequest) {
                 }, 2000);
                 
               } catch (error) {
-                console.error('❌ Error sending message to parent:', error);
-                
                 // Fallback: Try with '*' if specific origin fails
                 try {
                   window.parent.postMessage(messageData, '*');
-                  console.log('✅ Fallback message sent with wildcard origin');
                 } catch (fallbackError) {
-                  console.error('❌ Fallback also failed:', fallbackError);
+                  // Fallback also failed
                 }
               }
             })();
@@ -140,7 +120,7 @@ export async function POST(request: NextRequest) {
       })
     
   } catch (error) {
-    console.error('❌ Error in challenge-result:', error)
+    // Error in challenge-result
     
     // Return error response with postMessage
     const errorHtml = `
@@ -201,11 +181,8 @@ export async function POST(request: NextRequest) {
               
               try {
                 window.parent.postMessage(messageData, targetOrigin);
-                console.log('❌ Error message sent to parent');
               } catch (error) {
-                console.error('❌ Error sending error message:', error);
-                // Fallback
-                window.parent.postMessage(messageData, '*');
+                // Error sending error message
               }
             }
           })();

@@ -7,14 +7,6 @@ import { CreditCard, Lock, AlertCircle, CheckCircle, Loader2 } from 'lucide-reac
 import { 
   PaymentFormData, 
   MicroformInstance, 
-  CybersourceToken, 
-  PaymentResponse,
-  AuthenticationSetupRequest,
-  AuthenticationSetupResponse,
-  CardinalCommerceMessage,
-  EnrollmentCheckRequest,
-  EnrollmentCheckResponse,
-  ChallengeRequest,
   FlexTokenPayload
 } from '@/types/payment'
 import ChallengeIframe from './ChallengeIframe'
@@ -22,31 +14,6 @@ import { CardinalCommerceListener } from './CardinalCommerceListener'
 import { decodeJWT } from '@/utils/utils'
 import AddressForm from './AddressForm'
 
-const CARD_TYPES = {
-  '001': '💳', // Visa
-  '002': '💳', // Mastercard
-  '003': '💳', // American Express
-  '004': '💳', // Discover
-  '005': '💳', // Diners Club
-  '006': '💳', // Carte Blanche
-  '007': '💳', // JCB
-  '014': '💳', // EnRoute
-  '021': '💳', // JAL
-  '024': '💳', // Maestro (UK Domestic)
-  '031': '💳', // Delta
-  '033': '💳', // Visa Electron
-  '034': '💳', // Dankort
-  '036': '💳', // Cartes Bancaires
-  '037': '💳', // Carta Si
-  '039': '💳', // EAN
-  '040': '💳', // UATP
-  '042': '💳', // Maestro (International)
-  '050': '💳', // Hipercard
-  '051': '💳', // Aura
-  '054': '💳', // Elo
-  '062': '💳', // China UnionPay
-  'unknown': '💳'
-}
 
 // Card type mapping for Cybersource
 const CARD_TYPE_CODES = {
@@ -93,23 +60,18 @@ export default function PaymentForm() {
   
   // 3D Secure Authentication States
   const [isAuthenticating, setIsAuthenticating] = useState(false)
-  const [authenticationSetup, setAuthenticationSetup] = useState<AuthenticationSetupResponse | null>(null)
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const [ddcUrl, setDdcUrl] = useState<string | null>(null)
-  const [ddcReference, setDdcReference] = useState<string | null>(null)
+  // const [_, setDdcReference] = useState<string | null>(null)
   const [merchantReference, setMerchantReference] = useState<string | null>(null)
-  const [authenticationReferenceId, setAuthenticationReferenceId] = useState<string | null>(null)
 
   // Challenge Flow States
   const [showChallenge, setShowChallenge] = useState(false)
   const [challengeStepUpUrl, setChallengeStepUpUrl] = useState<string | null>(null)
-  const [challengeTransactionId, setChallengeTransactionId] = useState<string | null>(null)
+  // const [challengeTransactionId, setChallengeTransactionId] = useState<string | null>(null)
 
-  const [challengeModalOpen, setChallengeModalOpen] = useState(false);
-  const [challengeUrl, setChallengeUrl] = useState<string | null>(null);
   const [challengeAccessToken, setChallengeAccessToken] = useState<string | null>(null);
-  const [challengeReferenceId, setChallengeReferenceId] = useState<string | null>(null);
-  const [paymentResult, setPaymentResult] = useState<any>(null);
+  // const [paymentResult, setPaymentResult] = useState<any>(null);
   const [pareq, setPareq] = useState<string | null>(null);
   const autoPaymentTriggeredRef = useRef(false);
   const [isCollectingDeviceData, setIsCollectingDeviceData] = useState(false)
@@ -178,12 +140,7 @@ export default function PaymentForm() {
   
   // Debug: Log form values
   useEffect(() => {
-    console.log('📝 Form values:', {
-      amount,
-      currency,
-      billingCountry,
-      billing: watch('billing')
-    })
+ 
   }, [amount, currency, billingCountry, watch])
 
   // Helper function to get card type name
@@ -216,12 +173,12 @@ export default function PaymentForm() {
   useEffect(() => {
     // Prevent duplicate initialization
     if (isInitialized || checkoutToken || initializationStartedRef.current) {
-      console.log('🔄 Skipping initialization - already initialized, token exists, or initialization in progress')
+      // console.log('🔄 Skipping initialization - already initialized, token exists, or initialization in progress')
       return
     }
     
     initializationStartedRef.current = true
-    console.log('🔄 useEffect triggered - starting initialization')
+    // console.log('🔄 useEffect triggered - starting initialization')
     
     const decodeJWT = (token: string) => {
       try {
@@ -280,7 +237,7 @@ export default function PaymentForm() {
     
     const initializeMicroform = async () => {
       try {
-        console.log('🔄 Initializing microform - getting checkout token...')
+        // console.log('🔄 Initializing microform - getting checkout token...')
         // Get microform token from backend
         const response = await fetch('http://localhost:8080/api/v1/payment/checkout-token', {
           method: 'POST',
@@ -302,7 +259,7 @@ export default function PaymentForm() {
         
         // Store the checkout token for later use
         setCheckoutToken(data.token)
-        console.log('✅ Checkout token received and stored')
+        // console.log('✅ Checkout token received and stored')
         
         // Decode JWT to get script URL and integrity
         const decodedJWT = decodeJWT(data.token)
@@ -347,11 +304,11 @@ export default function PaymentForm() {
           numberField.load(cardNumberRef.current)
           
           // Add field validation listeners
-          numberField.on('change', (event: any) => {
+          numberField.on('change', () => {
             // Handle card number validation silently
           })
           
-          numberField.on('error', (event: any) => {
+          numberField.on('error', () => {
             toast.error('Card number field error')
           })
         }
@@ -360,11 +317,11 @@ export default function PaymentForm() {
           securityCodeField.load(cvvRef.current)
           
           // Add field validation listeners
-          securityCodeField.on('change', (event: any) => {
+          securityCodeField.on('change', () => {
             // Handle security code validation silently
           })
           
-          securityCodeField.on('error', (event: any) => {
+          securityCodeField.on('error', () => {
             toast.error('Security code field error')
           })
         }
@@ -403,10 +360,10 @@ export default function PaymentForm() {
         // when accessToken and ddcUrl are available (like visa-aft)
 
         setIsInitialized(true)
-        console.log('🎉 Microform initialization complete!')
+        // console.log('🎉 Microform initialization complete!')
         
       } catch (error) {
-        console.error('❌ Microform initialization error:', error)
+        // console.error('❌ Microform initialization error:', error)
         toast.error(`Failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
@@ -467,7 +424,6 @@ export default function PaymentForm() {
           // Handle 3DS challenge
           const paymentData = responseData.paymentResponse;
           const stepUpUrl = paymentData.consumerAuthenticationInformation?.stepUpUrl;
-          const acsTransactionId = paymentData.consumerAuthenticationInformation?.acsTransactionId;
           const authTransactionId = paymentData.consumerAuthenticationInformation?.authenticationTransactionId;
           const clientRefInfo = paymentData.clientReferenceInformation;
           const merchantRef = clientRefInfo?.code || 'order-' + Date.now();
@@ -499,7 +455,7 @@ export default function PaymentForm() {
             setStep('3ds-verification'); // Set step to 3DS verification
             setChallengeStepUpUrl(stepUpUrl)
             setChallengeAccessToken(accessToken)
-            setChallengeTransactionId(authTransactionId)
+            // setChallengeTransactionId(authTransactionId)
             setMerchantReference(merchantRef);
             setPareq(pareqValue);
             setShowChallenge(true)
@@ -512,7 +468,7 @@ export default function PaymentForm() {
         throw new Error(errorMsg);
       }
     } catch (error) {
-      console.error('❌ Payment failed:', error);
+      // console.error('❌ Payment failed:', error);
       const errorMsg = error instanceof Error ? error.message : 'Payment failed';
       setErrorMessage(errorMsg);
       setStep('failed');
@@ -523,97 +479,10 @@ export default function PaymentForm() {
   }
 
   // 3D Secure Authentication Functions
-  const setupPayerAuthentication = async (transientToken: string): Promise<AuthenticationSetupResponse> => {
-    try {
-      const authRequest: AuthenticationSetupRequest = {
-        isTransientToken: true,
-        transientToken: transientToken,
-        isSavedToken: false
-      }
-
-      const response = await fetch('http://localhost:3000/payment/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authRequest)
-      })
-
-      if (!response.ok) {
-        throw new Error(`Authentication setup failed: ${response.status}`)
-      }
-
-      const authData: AuthenticationSetupResponse = await response.json()
-
-      if (authData.data?.status === 'COMPLETED') {
-        setAuthenticationSetup(authData)
-        setAccessToken(authData.data.consumerAuthenticationInformation?.accessToken || null)
-        setDdcUrl(authData.data.consumerAuthenticationInformation?.deviceDataCollectionUrl || null)
-        setDdcReference(authData.data.consumerAuthenticationInformation?.referenceId || null)
-        setMerchantReference(authData.data.clientReferenceInformation?.code || null)
-        return authData
-      } else {
-        throw new Error('Authentication setup not completed')
-      }
-    } catch (error) {
-      throw error
-    }
-  }
 
   // Trigger device data collection
-  const triggerDeviceDataCollection = async () => {
-    try {
-      // Submit the Cardinal Commerce form (accessToken and ddcUrl are now available from auth setup)
-      const cardinalCollectionForm = document.querySelector('#cardinal_collection_form') as HTMLFormElement
-      if (cardinalCollectionForm && accessToken && ddcUrl) {
-        cardinalCollectionForm.submit()
-      }
-      
-      // Wait for device data collection to complete
-      return new Promise<void>((resolve) => {
-        const checkComplete = function() {
-          if (deviceDataCollected && cardinalSessionId) {
-            resolve()
-          } else {
-            setTimeout(checkComplete, 500) // Check every 500ms
-          }
-        }
-        checkComplete()
-      })
-    } catch (error) {
-      // Continue payment flow without device data collection
-      return Promise.resolve()
-    }
-  }
 
   // Enrollment Check Function
-  const checkEnrollment = async (tokenizedToken: string, data: PaymentFormData): Promise<EnrollmentCheckResponse> => {
-    try {
-      const enrollmentRequest: EnrollmentCheckRequest = {
-        flexResponse: tokenizedToken,
-        cardHolderName: `${data.firstName} ${data.lastName}`,
-        currency: data.currency,
-        totalAmount: data.amount.toString(),
-        paReference: ddcReference || undefined,
-        returnUrl: 'http://localhost:8082/receipt.php',
-        merchantReference: merchantReference || undefined,
-        ecommerceIndicatorAuth: 'vbv'
-      }
-
-      const response = await fetch('http://localhost:3000/payment/enrol-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(enrollmentRequest)
-      })
-
-      if (!response.ok) {
-        throw new Error(`Enrollment check failed: ${response.status}`)
-      }
-
-      const enrollmentData: EnrollmentCheckResponse = await response.json()
-      return enrollmentData
-    } catch (error) {
-      throw error
-    }
-  }
 
   // Handle URL params after challenge completion
   useEffect(() => {
@@ -666,7 +535,7 @@ export default function PaymentForm() {
         // Reset challenge-related states
         setChallengeStepUpUrl(null)
         setChallengeAccessToken(null)
-        setChallengeTransactionId(null)
+        // setChallengeTransactionId(null)
         setPareq(null)
         setShowChallenge(false)
       })
@@ -782,7 +651,7 @@ export default function PaymentForm() {
         ...getAddressData(data)
       }
 
-      console.log('🔄 Calling authentication setup with existing token...')
+      // console.log('🔄 Calling authentication setup with existing token...')
       const authResponse = await fetch('http://localhost:8080/api/v1/payment/combined-init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -790,7 +659,7 @@ export default function PaymentForm() {
       })
 
       const authResponseData = await authResponse.json()
-      console.log('🔍 Authentication setup response:', authResponseData)
+      // console.log('🔍 Authentication setup response:', authResponseData)
 
       if (authResponseData.result !== 'SUCCESS') {
         throw new Error(authResponseData.error || 'Authentication setup failed')
@@ -812,7 +681,7 @@ export default function PaymentForm() {
 
       const accessToken = consumerAuthInfo.accessToken
       const ddcUrl = consumerAuthInfo.deviceDataCollectionUrl
-      const ddcReference = consumerAuthInfo.referenceId
+      // const ddcReference = consumerAuthInfo.referenceId
       const merchantRef = clientRefInfo?.code || 'order-' + Date.now()
 
       // Step 4: Trigger device data collection
@@ -836,7 +705,7 @@ export default function PaymentForm() {
       // Store the authentication data for the next submission
       setAccessToken(accessToken)
       setDdcUrl(ddcUrl)
-      setDdcReference(ddcReference)
+      // setDdcReference(ddcReference)
       setMerchantReference(merchantRef)
       setIsAuthenticating(false)
 
@@ -850,7 +719,7 @@ export default function PaymentForm() {
 
   const handleChallengeComplete = async (transactionId: string, md?: string) => {
     try {
-      console.log('🔄 Processing challenge completion...', { transactionId, md });
+      // console.log('🔄 Processing challenge completion...', { transactionId, md });
       
       // Get stored payment data from localStorage
       const storedChallengeData = localStorage.getItem('challengeData');
@@ -872,7 +741,7 @@ export default function PaymentForm() {
       });
 
       const responseData = await response.json();
-      console.log('🔍 Challenge completion response:', responseData);
+      // console.log('🔍 Challenge completion response:', responseData);
 
       if (responseData.result === 'SUCCESS') {
         setStep('success');
@@ -886,7 +755,7 @@ export default function PaymentForm() {
         throw new Error(errorMsg);
       }
     } catch (error) {
-      console.error('❌ Challenge completion failed:', error);
+      // console.error('❌ Challenge completion failed:', error);
       const errorMsg = error instanceof Error ? error.message : 'Payment completion failed';
       setErrorMessage(errorMsg);
       setStep('failed');
@@ -896,7 +765,7 @@ export default function PaymentForm() {
       setShowChallenge(false);
       setChallengeStepUpUrl(null);
       setChallengeAccessToken(null);
-      setChallengeTransactionId(null);
+      // setChallengeTransactionId(null);
       setPareq(null);
     }
   };
@@ -1420,11 +1289,11 @@ export default function PaymentForm() {
       )}
       </form>
 
-      {paymentResult && (
+      {/* {paymentResult && (
         <div className={paymentResult.success ? 'success' : 'error'}>
           {paymentResult.message}
         </div>
-      )}
+      )} */}
     </>
   )
 } 

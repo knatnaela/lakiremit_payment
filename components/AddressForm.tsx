@@ -28,7 +28,7 @@ export default function AddressForm({
   watch: propWatch,
   setValue: propSetValue,
   errors: propErrors
-}: AddressFormProps) {
+}: Readonly<AddressFormProps>) {
   const formContext = useFormContext()
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([])
   
@@ -40,12 +40,6 @@ export default function AddressForm({
   
   const selectedCountry = watch ? watch(`${name}.country`) : undefined
   
-  // Debug: Log current country value
-  useEffect(() => {
-    console.log('🔍 Current selected country:', selectedCountry)
-    console.log('🔍 Country options loaded:', countryOptions.length)
-  }, [selectedCountry, countryOptions.length])
-
   // Convert countries data to options format
   useEffect(() => {
     const options: CountryOption[] = Object.entries(countries).map(([code, country]) => ({
@@ -63,13 +57,7 @@ export default function AddressForm({
     ]
 
     setCountryOptions(sortedOptions)
-    console.log('🌍 Country options loaded:', sortedOptions.length, 'countries')
   }, [])
-
-  // Get country name by code
-  const getCountryName = (code: string) => {
-    return countries[code as keyof typeof countries]?.name || code
-  }
 
   return (
     <div className="mb-8">
@@ -98,14 +86,11 @@ export default function AddressForm({
               isSearchable
               isClearable={false}
               onChange={(option) => {
-                console.log('🌍 Country selected:', option?.value, option?.label)
                 field.onChange(option?.value || '')
                 // Clear state/province when country changes
                 setValue(`${name}.state`, '')
               }}
               onFocus={() => {
-                console.log('🔍 Current field value:', field.value)
-                console.log('🔍 Available options:', countryOptions.length)
               }}
               styles={{
                 control: (provided) => ({
