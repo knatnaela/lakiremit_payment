@@ -6,6 +6,25 @@ import Select from 'react-select'
 import { countries } from 'countries-list'
 import { MapPin } from 'lucide-react'
 
+// Client-only wrapper to prevent hydration mismatch
+function ClientOnlySelect({ children, ...props }: any) {
+  const [hasMounted, setHasMounted] = useState(false)
+
+  useEffect(() => {
+    setHasMounted(true)
+  }, [])
+
+  if (!hasMounted) {
+    return (
+      <div className="form-input" style={{ minHeight: '48px', display: 'flex', alignItems: 'center' }}>
+        <span className="text-gray-400">Loading...</span>
+      </div>
+    )
+  }
+
+  return children
+}
+
 interface CountryOption {
   value: string
   label: string
@@ -44,7 +63,7 @@ export default function AddressForm({
   useEffect(() => {
     const options: CountryOption[] = Object.entries(countries).map(([code, country]) => ({
       value: code,
-      label: country.name,
+      label: `${country.name} (${code})`,
       code: code
     })).sort((a, b) => a.label.localeCompare(b.label))
 
@@ -76,38 +95,58 @@ export default function AddressForm({
           control={control}
           rules={{ required: required ? 'Country is required' : false }}
           render={({ field }) => (
-            <Select
-              {...field}
-              value={countryOptions.find(option => option.value === field.value) || null}
-              options={countryOptions}
-              placeholder="Select a country..."
-              className="react-select-container"
-              classNamePrefix="react-select"
-              isSearchable
-              isClearable={false}
-              onChange={(option) => {
-                field.onChange(option?.value || '')
-                // Clear state/province when country changes
-                setValue(`${name}.state`, '')
-              }}
-              onFocus={() => {
-              }}
-              styles={{
-                control: (provided) => ({
-                  ...provided,
-                  minHeight: '48px',
-                  borderColor: errors[`${name}.country`] ? '#ef4444' : '#d1d5db',
-                  '&:hover': {
-                    borderColor: errors[`${name}.country`] ? '#ef4444' : '#9ca3af'
-                  }
-                }),
-                option: (provided, state) => ({
-                  ...provided,
-                  backgroundColor: state.isSelected ? '#3b82f6' : state.isFocused ? '#f3f4f6' : 'white',
-                  color: state.isSelected ? 'white' : '#374151'
-                })
-              }}
-            />
+            <ClientOnlySelect>
+              <Select
+                {...field}
+                value={field.value ? countryOptions.find(option => option.value === field.value) || null : null}
+                options={countryOptions}
+                placeholder="Select a country..."
+                className="react-select-container"
+                classNamePrefix="react-select"
+                isSearchable
+                isClearable={false}
+                filterOption={(option, inputValue) => {
+                  if (!inputValue) return true
+                  return option.label.toLowerCase().includes(inputValue.toLowerCase()) ||
+                         option.value.toLowerCase().includes(inputValue.toLowerCase())
+                }}
+                noOptionsMessage={() => "No countries found"}
+                loadingMessage={() => "Loading countries..."}
+                onChange={(option) => {
+                  field.onChange(option?.value || '')
+                  // Clear state/province when country changes
+                  setValue(`${name}.state`, '')
+                }}
+                styles={{
+                  control: (provided) => ({
+                    ...provided,
+                    minHeight: '48px',
+                    borderColor: errors[`${name}.country`] ? '#ef4444' : '#d1d5db',
+                    '&:hover': {
+                      borderColor: errors[`${name}.country`] ? '#ef4444' : '#9ca3af'
+                    }
+                  }),
+                  option: (provided, state) => ({
+                    ...provided,
+                    backgroundColor: state.isSelected ? '#3b82f6' : state.isFocused ? '#f3f4f6' : 'white',
+                    color: state.isSelected ? 'white' : '#374151',
+                    cursor: 'pointer'
+                  }),
+                  menu: (provided) => ({
+                    ...provided,
+                    zIndex: 9999
+                  }),
+                  input: (provided) => ({
+                    ...provided,
+                    color: '#374151'
+                  }),
+                  placeholder: (provided) => ({
+                    ...provided,
+                    color: '#9ca3af'
+                  })
+                }}
+              />
+            </ClientOnlySelect>
           )}
         />
         {errors[`${name}.country`] && (
@@ -131,7 +170,6 @@ export default function AddressForm({
                 type="text"
                 className="form-input"
                 placeholder={selectedCountry === 'US' ? 'NY' : 'State/Province'}
-                disabled={!selectedCountry}
               />
             )}
           />
@@ -154,7 +192,6 @@ export default function AddressForm({
                 type="text"
                 className="form-input"
                 placeholder="City"
-                disabled={!selectedCountry}
               />
             )}
           />
@@ -180,7 +217,6 @@ export default function AddressForm({
                 type="text"
                 className="form-input"
                 placeholder={selectedCountry === 'US' ? '12345' : 'Postal Code'}
-                disabled={!selectedCountry}
               />
             )}
           />
@@ -203,7 +239,6 @@ export default function AddressForm({
                 type="text"
                 className="form-input"
                 placeholder="123 Main Street"
-                disabled={!selectedCountry}
               />
             )}
           />
@@ -218,19 +253,18 @@ export default function AddressForm({
         <label className="form-label">
           Address Line 2 (Optional)
         </label>
-        <Controller
-          name={`${name}.address2`}
-          control={control}
-          render={({ field }) => (
-            <input
-              {...field}
-              type="text"
-              className="form-input"
-              placeholder="Apartment, suite, etc. (optional)"
-              disabled={!selectedCountry}
-            />
-          )}
-        />
+                  <Controller
+            name={`${name}.address2`}
+            control={control}
+            render={({ field }) => (
+              <input
+                {...field}
+                type="text"
+                className="form-input"
+                placeholder="Apartment, suite, etc. (optional)"
+              />
+            )}
+          />
       </div>
     </div>
   )

@@ -206,4 +206,43 @@ declare global {
   interface Window {
     Flex?: FlexConstructor
   }
+}
+
+// Transaction API Response Interface
+export interface Transaction {
+  createdAt: string
+  updatedAt: string
+  id: string
+  receiverFullName: string
+  receiverPhoneNumber: string
+  receiverBankAccount: string
+  bankName: string
+  senderFullName: string
+  senderCountryCode: string
+  sentAmount: number
+  exchangeRate: number
+  receivableAmount: number
+  totalReceivableAmount: number
+  currency: string
+  transferType: string
+  gift: number
+  reason: string
+  transactionFee: number
+  totalAmount: number
+  transactionId: string
+  paymentStatus: string
+  status: string
+  transactionType: string
+  settlementStatus: string
+}
+
+export interface TransactionResponse {
+  errors: string[]
+  result: string
+  readableErrorMessages: string[]
+  totalItems: number | null
+  totalPage: number
+  pageSize: number
+  transactions: Transaction[]
+  errorCodes: string[]
 } 

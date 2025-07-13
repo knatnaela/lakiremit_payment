@@ -7,12 +7,15 @@ import { CreditCard, Lock, AlertCircle, CheckCircle, Loader2 } from 'lucide-reac
 import { 
   PaymentFormData, 
   MicroformInstance, 
-  FlexTokenPayload
+  FlexTokenPayload,
+  Transaction,
+  TransactionResponse
 } from '@/types/payment'
 import ChallengeIframe from './ChallengeIframe'
 import { CardinalCommerceListener } from './CardinalCommerceListener'
 import { decodeJWT } from '@/utils/utils'
 import AddressForm from './AddressForm'
+import { useSearchParams } from 'next/navigation'
 
 
 // Card type mapping for Cybersource
@@ -57,6 +60,11 @@ export default function PaymentForm() {
   const [clientIpAddress, setClientIpAddress] = useState<string>('')
   const [checkoutToken, setCheckoutToken] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  
+  // Transaction data state
+  const [transaction, setTransaction] = useState<Transaction | null>(null)
+  const [isLoadingTransaction, setIsLoadingTransaction] = useState(false)
+  const [transactionError, setTransactionError] = useState<string | null>(null)
   
   // 3D Secure Authentication States
   const [isAuthenticating, setIsAuthenticating] = useState(false)
@@ -124,7 +132,7 @@ export default function PaymentForm() {
     defaultValues: {
       currency: 'USD',
       billing: {
-        country: 'US',
+        country: '',
         address: '',
         city: '',
         state: '',
@@ -137,6 +145,63 @@ export default function PaymentForm() {
   const amount = watch('amount')
   const currency = watch('currency')
   const billingCountry = watch('billing.country')
+  const searchParams = useSearchParams()
+  
+  // Fetch transaction data from query parameter
+  useEffect(() => {
+    const fetchTransaction = async () => {
+      if (!mounted) return
+      
+      const transactionId = searchParams.get('transactionId')
+      if (!transactionId) {
+        setTransactionError('Transaction not found')
+        return
+      }
+      
+      setIsLoadingTransaction(true)
+      setTransactionError(null)
+      
+      try {
+        const response = await fetch(`http://localhost:8080/api/v1/transaction/user/${transactionId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyVHlwZSI6IkNVU1RPTUVSIiwic3ViIjoibmF0bmFlbGFkYW5lMjErMkBnbWFpbC5jb20iLCJpYXQiOjE3NTI0MDA5MDQsImV4cCI6MTc1MjQwMjEwNH0.ywxJYe65OWE4D77dj9eg1edoiw0qaFpkeVtKwh9Doz4'
+          }
+        })
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data: TransactionResponse = await response.json()
+        
+        if (data.result !== 'SUCCESS') {
+          throw new Error(data.readableErrorMessages?.join(', ') || 'Failed to fetch transaction')
+        }
+        
+        if (!data.transactions || data.transactions.length === 0) {
+          throw new Error('Transaction not found')
+        }
+        
+        const transactionData = data.transactions[0]
+        setTransaction(transactionData)
+        
+        // Set form values with transaction data
+        setValue('amount', transactionData.totalAmount)
+        setValue('currency', transactionData.currency)
+        
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Failed to fetch transaction'
+        setTransactionError(errorMsg)
+        toast.error(errorMsg)
+      } finally {
+        setIsLoadingTransaction(false)
+      }
+    }
+    
+    fetchTransaction()
+  }, [mounted, setValue, searchParams])
   
   // Debug: Log form values
   useEffect(() => {
@@ -175,6 +240,16 @@ export default function PaymentForm() {
     if (isInitialized || checkoutToken || initializationStartedRef.current) {
       // console.log('🔄 Skipping initialization - already initialized, token exists, or initialization in progress')
       return
+    }
+    
+    // Only require mounted state and transaction ID from URL
+    if (!mounted) {
+      return
+    }
+    
+    const transactionId = searchParams.get('transactionId')
+    if (!transactionId) {
+      return // Don't initialize if no transaction ID in URL
     }
     
     initializationStartedRef.current = true
@@ -239,11 +314,17 @@ export default function PaymentForm() {
       try {
         // console.log('🔄 Initializing microform - getting checkout token...')
         // Get microform token from backend
+        const transactionId = searchParams.get('transactionId')
+        
+        if (!transactionId) {
+          throw new Error('No transaction ID provided in URL')
+        }
+        
         const response = await fetch('http://localhost:8080/api/v1/payment/checkout-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-           'transactionId': 'I4pyyshLem'
+           'transactionId': transactionId
           })
         })
         
@@ -326,35 +407,7 @@ export default function PaymentForm() {
           })
         }
         
-        // Set up Cardinal Commerce message listener using the separate class
-        const cardinalListener = CardinalCommerceListener.getInstance();
-        cardinalListener.startListening((messageData) => {
-          // Enable payment button when any message is received
-          setIsAuthenticating(false)
-          
-          if (messageData.MessageType === "profile.completed" && messageData.Status === true) {
-            setDeviceDataCollected(true)
-            setCardinalSessionId(messageData.SessionId)
-            
-            // Auto-proceed to payment processing since we have all required data (only once)
-            if (!autoPaymentTriggeredRef.current) {
-              autoPaymentTriggeredRef.current = true
-              
-              // Get the current form data and proceed with payment
-              const currentFormData = watch()
-              if (currentFormData.amount && currentFormData.firstName && currentFormData.lastName && currentFormData.email) {
-                // Use setTimeout to ensure state updates are complete
-                setTimeout(() => {
-                  processPaymentWithDeviceData(messageData.SessionId, currentFormData)
-                }, 100)
-              } else {
-                toast.success('Device data collected! Please complete the form and submit again.')
-              }
-            }
-          } else if (messageData.MessageType === "profile.error") {
-            // Handle error silently - user can still proceed with payment
-          }
-        });
+        // Note: Cardinal Commerce listener is set up in a separate useEffect to avoid conflicts
 
         // Note: Cardinal Commerce form will be submitted after authentication setup
         // when accessToken and ddcUrl are available (like visa-aft)
@@ -375,11 +428,17 @@ export default function PaymentForm() {
       const cardinalListener = CardinalCommerceListener.getInstance();
       cardinalListener.stopListening();
     }
-  }, [mounted]) // Only run when mounted changes
+  }, [mounted, searchParams]) // Run when mounted or search params change
 
   // Process payment with collected device data
   const processPaymentWithDeviceData = async (sessionId: string, data: PaymentFormData) => {
+    console.log('🚀 processPaymentWithDeviceData called with:', { sessionId, data, transaction })
     try {
+      // Validate that we have transaction data
+      if (!transaction) {
+        throw new Error('Transaction data not available')
+      }
+      
       // Collect comprehensive device information with the real session ID
       const deviceInfo = collectDeviceInformation(sessionId)
       
@@ -387,10 +446,10 @@ export default function PaymentForm() {
       const paymentRequest = {
         transientToken: currentTokenRef.current || paymentToken,
         cardHolder: `${data.firstName} ${data.lastName}`,
-        currency: data.currency,
-        totalAmount: data.amount.toString(),
+        currency: transaction.currency,
+        totalAmount: transaction.totalAmount.toString(),
         returnUrl: 'http://localhost:3000/api/payment/challenge-result',
-        merchantReference: merchantReference || 'order-' + Date.now(),
+        merchantReference:  transaction.transactionId,
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: false,
         // Card type information
@@ -435,8 +494,8 @@ export default function PaymentForm() {
           const challengeData = {
             authenticationTransactionId: authTransactionId,
             transactionID: paymentData.id,
-            currency: data.currency,
-            totalAmount: data.amount.toString(),
+            currency: transaction.currency,
+            totalAmount: transaction.totalAmount.toString(),
             transientToken: currentTokenRef.current || paymentToken,
             merchantReference: merchantRef,
             ecommerceIndicatorAuth: 'internet',
@@ -579,11 +638,20 @@ export default function PaymentForm() {
       return
     }
 
+    // Validate that we have transaction data
+    if (!transaction) {
+      toast.error('Transaction data not available')
+      return
+    }
+
     // Validate that required fields are present
     if (!data.expirationMonth || !data.expirationYear) {
       toast.error('Please select card expiration month and year')
       return
     }
+
+    // Reset auto-payment trigger to allow manual submission
+    autoPaymentTriggeredRef.current = false
 
     // Check if Cybersource fields are loaded
     if (!cardNumberRef.current || !cvvRef.current) {
@@ -624,7 +692,8 @@ export default function PaymentForm() {
 
       // Step 2: Check if device data collection is already complete
       if (deviceDataCollected && cardinalSessionId) {
-        toast.success('Device data collected! Payment will be processed automatically.')
+        console.log('✅ Device data already collected, proceeding with payment...')
+        processPaymentWithDeviceData(cardinalSessionId, data)
         setIsLoading(false)
         return
       }
@@ -634,11 +703,11 @@ export default function PaymentForm() {
       const authSetupRequest = {
         transientToken: tokenizedToken,
         cardHolder: `${data.firstName} ${data.lastName}`,
-        currency: data.currency,
-        totalAmount: data.amount.toString(),
+        currency: transaction.currency,
+        totalAmount: transaction.totalAmount.toString(),
         paReference: 'ref-' + Date.now(),
         returnUrl: 'http://localhost:3000/api/payment/challenge-result',
-        merchantReference: 'order-' + Date.now(),
+        merchantReference: transaction.transactionId,
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: data.saveCard || false,
         // Card type information
@@ -789,12 +858,23 @@ export default function PaymentForm() {
           
           // Get the current form data and proceed with payment
           const currentFormData = watch()
-          if (currentFormData.amount && currentFormData.firstName && currentFormData.lastName && currentFormData.email) {
+          console.log('🔄 Auto-payment check (listener):', { 
+            hasTransaction: !!transaction, 
+            firstName: currentFormData.firstName, 
+            lastName: currentFormData.lastName, 
+            email: currentFormData.email,
+            autoPaymentTriggered: autoPaymentTriggeredRef.current
+          })
+          
+          if (transaction && currentFormData.firstName && currentFormData.lastName && currentFormData.email) {
+            console.log('✅ Auto-payment conditions met (listener), proceeding...')
             setTimeout(() => {
               processPaymentWithDeviceData(messageData.SessionId, currentFormData)
             }, 100)
           } else {
-            toast.success('Device data collected! Please complete the form and submit again.')
+            console.log('❌ Auto-payment conditions not met (listener), waiting for form completion...')
+            // Form is not complete, user needs to fill in required fields
+            // No toast needed - let them complete the form naturally
           }
         }
       } else if (messageData.MessageType === "profile.error") {
@@ -809,7 +889,7 @@ export default function PaymentForm() {
     return () => {
       cardinalListener.stopListening();
     }
-  }, []);
+  }, [transaction, watch, processPaymentWithDeviceData]);
 
   const resetForm = () => {
     setStep('form')
@@ -823,12 +903,39 @@ export default function PaymentForm() {
     setCheckoutToken(null)
     setIsInitialized(false)
     initializationStartedRef.current = false
+    setTransaction(null)
+    setTransactionError(null)
+    setIsLoadingTransaction(false)
     
     // Reload the page to get a fresh start
     window.location.reload()
   }
 
   const getButtonContent = () => {
+    if (isLoadingTransaction) {
+      return (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Loading Transaction...</span>
+        </>
+      )
+    }
+    if (transactionError) {
+      return (
+        <>
+          <AlertCircle className="h-5 w-5" />
+          <span>Transaction Error</span>
+        </>
+      )
+    }
+    if (!transaction) {
+      return (
+        <>
+          <AlertCircle className="h-5 w-5" />
+          <span>No Transaction Found</span>
+        </>
+      )
+    }
     if (isLoading) {
       return (
         <>
@@ -997,59 +1104,72 @@ export default function PaymentForm() {
         <div className="flex items-center space-x-2">
           <Lock className="h-5 w-5 text-green-600" />
           <span className="text-sm text-gray-600">Secured by Cybersource</span>
+          {transaction && (
+            <span className="text-xs text-gray-400 ml-4">
+              ID: {transaction.transactionId}
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Amount Section */}
-      <div className="mb-8 p-4 bg-gray-50 rounded-lg">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="amount" className="form-label">
-              Amount *
-            </label>
-            <input
-              id="amount"
-              type="number"
-              step="0.01"
-              min="1"
-              className="form-input"
-              placeholder="0.00"
-              {...register('amount', {
-                required: 'Amount is required',
-                min: { value: 1, message: 'Minimum amount is $1' },
-                max: { value: 10000, message: 'Maximum amount is $10,000' }
-              })}
-            />
-            {errors.amount && (
-              <p className="form-error">{errors.amount.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="currency" className="form-label">
-              Currency *
-            </label>
-            <select
-              id="currency"
-              className="form-input"
-              {...register('currency', { required: 'Currency is required' })}
-            >
-              <option value="USD">USD - US Dollar</option>
-              <option value="EUR">EUR - Euro</option>
-              <option value="GBP">GBP - British Pound</option>
-              <option value="PHP">PHP - Philippine Peso</option>
-            </select>
+      {/* Transaction Loading State */}
+      {isLoadingTransaction && (
+        <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <Loader2 className="h-8 w-8 text-blue-600 animate-spin mr-3" />
+              <h3 className="text-lg font-semibold text-blue-900">Loading Transaction</h3>
+            </div>
+            <p className="text-blue-700">Please wait while we fetch your transaction details...</p>
           </div>
         </div>
+      )}
 
-        {Boolean(amount) && (
-          <div className="mt-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">
-              {currency} {amount ? parseFloat(amount.toString()).toFixed(2) : '0.00'}
-            </p>
+      {transactionError && (
+        <div className="mb-8 p-6 bg-gradient-to-r from-red-50 to-pink-50 rounded-lg border border-red-200">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <AlertCircle className="h-8 w-8 text-red-600 mr-3" />
+              <h3 className="text-lg font-semibold text-red-900">Transaction Error</h3>
+            </div>
+            <p className="text-red-700">{transactionError}</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {transaction && !isLoadingTransaction && (
+        <div className="mb-8 p-4 bg-green-50 rounded-lg">
+          <div className="text-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Transaction Details</h3>
+            <div className="text-3xl font-bold text-green-600">
+              {transaction.currency} {transaction.totalAmount.toFixed(2)}
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-gray-600">Transaction ID</p>
+              <p className="font-mono font-medium">{transaction.transactionId}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Receiver</p>
+              <p className="font-medium">{transaction.receiverFullName}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Bank</p>
+              <p className="font-medium">{transaction.bankName}</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Status</p>
+              <p className="font-medium">{transaction.paymentStatus}</p>
+            </div>
+          </div>
+          
+          {/* Hidden form fields for amount and currency */}
+          <input type="hidden" {...register('amount', { required: false })} />
+          <input type="hidden" {...register('currency', { required: false })} />
+        </div>
+      )}
 
       {/* Personal Information */}
       <div className="mb-8">
@@ -1276,7 +1396,16 @@ export default function PaymentForm() {
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={isLoading || !isInitialized || isAuthenticating || isCollectingDeviceData || (deviceDataCollected && cardinalSessionId !== null) || autoPaymentTriggeredRef.current}
+        disabled={
+          isLoading || 
+          !isInitialized || 
+          isAuthenticating || 
+          isCollectingDeviceData || 
+          isLoadingTransaction ||
+          !transaction ||
+          !!transactionError ||
+          (deviceDataCollected && !!cardinalSessionId && autoPaymentTriggeredRef.current)
+        }
         className="btn-primary w-full flex items-center justify-center space-x-2"
       >
         {getButtonContent()}
@@ -1284,7 +1413,7 @@ export default function PaymentForm() {
 
       {mounted && !isInitialized && (
         <p className="text-center text-sm text-gray-500 mt-4">
-          Initializing secure payment form...
+          {isLoadingTransaction ? 'Loading transaction...' : 'Initializing secure payment form...'}
         </p>
       )}
       </form>
