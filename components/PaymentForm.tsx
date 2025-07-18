@@ -16,6 +16,7 @@ import { CardinalCommerceListener } from './CardinalCommerceListener'
 import { decodeJWT } from '@/utils/utils'
 import AddressForm from './AddressForm'
 import { useSearchParams } from 'next/navigation'
+import { API_CONFIG, API_ENDPOINTS, buildApiUrl, CHALLENGE_URLS } from '@/constants/api'
 
 
 // Card type mapping for Cybersource
@@ -131,6 +132,7 @@ export default function PaymentForm() {
   } = useForm<PaymentFormData>({
     defaultValues: {
       currency: 'USD',
+      saveCard: false,
       billing: {
         country: '',
         address: '',
@@ -146,6 +148,20 @@ export default function PaymentForm() {
   const currency = watch('currency')
   const billingCountry = watch('billing.country')
   const searchParams = useSearchParams()
+
+  const getAuthToken = () => {
+    const cookies = document.cookie.split(';');
+    const authCookie = cookies.find(cookie => cookie.trim().startsWith('access_token'));
+    if (!authCookie) return null;
+    const token = authCookie.split('=')[1].trim();
+    return `Bearer ${token}`;
+  }
+
+  const getAuthTokenFromHeaders = () => {
+    const headers = new Headers();
+    headers.set('Authorization', `Bearer ${getAuthToken()}`);
+    return headers;
+  }
   
   // Fetch transaction data from query parameter
   useEffect(() => {
@@ -160,13 +176,15 @@ export default function PaymentForm() {
       
       setIsLoadingTransaction(true)
       setTransactionError(null)
+
+      const authToken = getAuthToken();
       
       try {
-        const response = await fetch(`http://localhost:8080/api/v1/transaction/user/${transactionId}`, {
+        const response = await fetch(buildApiUrl(API_ENDPOINTS.TRANSACTION.GET_USER_TRANSACTION(transactionId)), {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyVHlwZSI6IkNVU1RPTUVSIiwic3ViIjoibmF0bmFlbGFkYW5lMjErMkBnbWFpbC5jb20iLCJpYXQiOjE3NTI0MDA5MDQsImV4cCI6MTc1MjQwMjEwNH0.ywxJYe65OWE4D77dj9eg1edoiw0qaFpkeVtKwh9Doz4'
+            'Authorization': authToken || '',
           }
         })
         
@@ -282,7 +300,7 @@ export default function PaymentForm() {
         const script = document.createElement('script')
         script.src = scriptUrl
         script.integrity = integrity
-        script.crossOrigin = 'http://localhost:3000'
+        script.crossOrigin = API_CONFIG.FRONTEND_BASE_URL
         script.onload = () => {
           // Wait for FLEX to be available after script loads
           let attempts = 0
@@ -320,7 +338,7 @@ export default function PaymentForm() {
           throw new Error('No transaction ID provided in URL')
         }
         
-        const response = await fetch('http://localhost:8080/api/v1/payment/checkout-token', {
+        const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.CHECKOUT_TOKEN), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -448,10 +466,9 @@ export default function PaymentForm() {
         cardHolder: `${data.firstName} ${data.lastName}`,
         currency: transaction.currency,
         totalAmount: transaction.totalAmount.toString(),
-        returnUrl: 'http://localhost:3000/api/payment/challenge-result',
+        returnUrl: CHALLENGE_URLS.RESULT_CALLBACK,
         merchantReference:  transaction.transactionId,
         ecommerceIndicatorAuth: 'internet',
-        isSaveCard: false,
         // Card type information
         cardType: cardType,
         cardTypeName: getCardTypeName(cardType),
@@ -459,13 +476,14 @@ export default function PaymentForm() {
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email,
+        saveCard: data.saveCard,
         // Billing address information
         ...getAddressData(data),
         // Device information
         ...deviceInfo
       }
 
-      const response = await fetch('http://localhost:8080/api/v1/payment/combined', {
+      const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(paymentRequest)
@@ -563,7 +581,7 @@ export default function PaymentForm() {
       const challengeData = JSON.parse(storedChallengeData)
 
       // Send the final payment request to the backend
-      fetch('http://localhost:8080/api/v1/payment/combined-after-challenge', {
+      fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED_AFTER_CHALLENGE), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -603,8 +621,6 @@ export default function PaymentForm() {
       toast.error(`Payment failed: ${message}`)
     }
 
-    // Clear URL params
-    window.history.replaceState({}, '', window.location.pathname)
   }, [])
 
   // Collect device information from browser
@@ -706,7 +722,7 @@ export default function PaymentForm() {
         currency: transaction.currency,
         totalAmount: transaction.totalAmount.toString(),
         paReference: 'ref-' + Date.now(),
-        returnUrl: 'http://localhost:3000/api/payment/challenge-result',
+        returnUrl: CHALLENGE_URLS.RESULT_CALLBACK,
         merchantReference: transaction.transactionId,
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: data.saveCard || false,
@@ -721,7 +737,7 @@ export default function PaymentForm() {
       }
 
       // console.log('🔄 Calling authentication setup with existing token...')
-      const authResponse = await fetch('http://localhost:8080/api/v1/payment/combined-init', {
+      const authResponse = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED_INIT), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(authSetupRequest)
@@ -799,7 +815,7 @@ export default function PaymentForm() {
       const challengeData = JSON.parse(storedChallengeData);
 
       // Send the final payment request to the backend
-      const response = await fetch('http://localhost:8080/api/v1/payment/combined-after-challenge', {
+      const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED_AFTER_CHALLENGE), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -977,6 +993,14 @@ export default function PaymentForm() {
   }
 
   if (step === 'success') {
+    const navigateBackToApp = () => {
+      const params = new URLSearchParams({ status: 'success' })
+      if (transactionId) {
+        params.append('transactionId', transactionId)
+      }
+      window.location.href = `lakiremit://payment-result?${params.toString()}`
+    }
+
     return (
       <div className="card p-8">
         <div className="text-center">
@@ -993,10 +1017,10 @@ export default function PaymentForm() {
             </p>
           )}
           <button
-            onClick={resetForm}
+            onClick={navigateBackToApp}
             className="btn-primary"
           >
-            Make Another Payment
+            Return to App
           </button>
         </div>
       </div>
@@ -1004,6 +1028,17 @@ export default function PaymentForm() {
   }
 
   if (step === 'failed') {
+    const navigateBackToApp = () => {
+      const params = new URLSearchParams({ status: 'failed' })
+      if (transactionId) {
+        params.append('transactionId', transactionId)
+      }
+      if (errorMessage) {
+        params.append('error', errorMessage)
+      }
+      window.location.href = `lakiremit://payment-result?${params.toString()}`
+    }
+
     return (
       <div className="card p-8">
         <div className="text-center">
@@ -1015,10 +1050,10 @@ export default function PaymentForm() {
             {errorMessage || 'Your payment could not be processed. Please try again.'}
           </p>
           <button
-            onClick={resetForm}
+            onClick={navigateBackToApp}
             className="btn-primary"
           >
-            Try Again
+            Return to App
           </button>
         </div>
       </div>
@@ -1342,7 +1377,25 @@ export default function PaymentForm() {
         errors={errors}
       />
 
-
+      {/* Save Card Option */}
+      <div className="mt-4 mb-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <label className="flex items-center space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="form-checkbox h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            {...register('saveCard')}
+            defaultChecked={false}
+          />
+          <div>
+            <span className="text-sm font-medium text-gray-700">
+              Save this card for future payments
+            </span>
+            <p className="text-xs text-gray-500 mt-1">
+              Your card information will be securely stored for faster checkout next time
+            </p>
+          </div>
+        </label>
+      </div>
 
       {/* Security Notice */}
       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">

@@ -25,7 +25,7 @@ export interface PaymentFormData {
   cardinalSessionId?: string
   paReference?: string
   merchantReference?: string
-  saveCard?: boolean
+  saveCard: boolean
 }
 
 export interface CybersourceToken {
