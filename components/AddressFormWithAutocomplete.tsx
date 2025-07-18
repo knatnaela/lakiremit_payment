@@ -5,7 +5,6 @@ import { useFormContext, Controller } from 'react-hook-form'
 import Select from 'react-select'
 import { countries } from 'countries-list'
 import { MapPin, Search } from 'lucide-react'
-import { Loader } from '@googlemaps/js-api-loader'
 
 interface CountryOption {
   value: string
@@ -29,15 +28,11 @@ export default function AddressFormWithAutocomplete({
   name = 'billing', 
   required = true,
   enableAutocomplete = false,
-  googleApiKey
 }: AddressFormProps) {
   const { control, watch, setValue, formState: { errors } } = useFormContext()
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([])
-  const [isAutocompleteLoaded, setIsAutocompleteLoaded] = useState(false)
-  const [isLoadingAutocomplete, setIsLoadingAutocomplete] = useState(false)
   const selectedCountry = watch(`${name}.country`)
   const addressInputRef = useRef<HTMLInputElement>(null)
-  const autocompleteRef = useRef<any>(null)
 
   // Convert countries data to options format
   useEffect(() => {
@@ -57,81 +52,6 @@ export default function AddressFormWithAutocomplete({
 
     setCountryOptions(sortedOptions)
   }, [])
-
-  // Load Google Places Autocomplete
-  useEffect(() => {
-    if (!enableAutocomplete || !googleApiKey || !addressInputRef.current) {
-      return
-    }
-
-    setIsLoadingAutocomplete(true)
-    
-    const loader = new Loader({
-      apiKey: googleApiKey,
-      version: 'weekly',
-      libraries: ['places']
-    })
-
-    loader.load().then(() => {
-      if (addressInputRef.current && window.google && window.google.maps && window.google.maps.places) {
-        autocompleteRef.current = new window.google.maps.places.Autocomplete(addressInputRef.current, {
-          types: ['address'],
-          componentRestrictions: { country: selectedCountry || undefined }
-        })
-
-        autocompleteRef.current.addListener('place_changed', () => {
-          const place = autocompleteRef.current?.getPlace()
-          if (place && place.formatted_address) {
-            // Parse the address components
-            const addressComponents = place.address_components || []
-            
-            // Extract address parts
-            const streetNumber = addressComponents.find((component: { types: string | string[] }) => 
-              component.types.includes('street_number')
-            )?.long_name || ''
-            
-            const route = addressComponents.find((component: { types: string | string[] }) => 
-              component.types.includes('route')
-            )?.long_name || ''
-            
-            const city = addressComponents.find((component: { types: string | string[] }) => 
-              component.types.includes('locality')
-            )?.long_name || ''
-            
-            const state = addressComponents.find((component: { types: string | string[] }) => 
-              component.types.includes('administrative_area_level_1')
-            )?.long_name || ''
-            
-            const postalCode = addressComponents.find((component: { types: string | string[] }) => 
-              component.types.includes('postal_code')
-            )?.long_name || ''
-            
-            const country = addressComponents.find((component: { types: string | string[] }) => 
-              component.types.includes('country')
-            )?.short_name || ''
-
-            // Update form values
-            setValue(`${name}.address`, `${streetNumber} ${route}`.trim())
-            setValue(`${name}.city`, city)
-            setValue(`${name}.state`, state)
-            setValue(`${name}.postalCode`, postalCode)
-            setValue(`${name}.country`, country)
-          }
-        })
-
-        setIsAutocompleteLoaded(true)
-      }
-      setIsLoadingAutocomplete(false)
-    }).catch(() => {
-      setIsLoadingAutocomplete(false)
-    })
-
-    return () => {
-      if (autocompleteRef.current && window.google && window.google.maps && window.google.maps.event) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current)
-      }
-    }
-  }, [enableAutocomplete, googleApiKey, selectedCountry, name, setValue])
 
 
   return (
@@ -219,16 +139,7 @@ export default function AddressFormWithAutocomplete({
               />
             )}
           />
-          {enableAutocomplete && isLoadingAutocomplete && (
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-            </div>
-          )}
-          {enableAutocomplete && isAutocompleteLoaded && (
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-              <Search className="h-4 w-4 text-gray-400" />
-            </div>
-          )}
+          
         </div>
         {errors[`${name}.address`] && (
           <p className="form-error">{errors[`${name}.address`]?.message as string}</p>

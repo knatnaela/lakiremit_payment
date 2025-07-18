@@ -7,7 +7,7 @@ import { countries } from 'countries-list'
 import { MapPin } from 'lucide-react'
 
 // Client-only wrapper to prevent hydration mismatch
-function ClientOnlySelect({ children, ...props }: any) {
+function ClientOnlySelect({ children }: any) {
   const [hasMounted, setHasMounted] = useState(false)
 
   useEffect(() => {
@@ -106,7 +106,7 @@ export default function AddressForm({
                 isSearchable
                 isClearable={false}
                 filterOption={(option, inputValue) => {
-                  if (!inputValue) return true
+                  if (!inputValue) {return true}
                   return option.label.toLowerCase().includes(inputValue.toLowerCase()) ||
                          option.value.toLowerCase().includes(inputValue.toLowerCase())
                 }}
