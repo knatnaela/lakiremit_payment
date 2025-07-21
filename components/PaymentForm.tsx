@@ -561,6 +561,7 @@ export default function PaymentForm() {
         body: JSON.stringify({
           ...challengeData,
           transactionId,
+          merchantReference: transactionId,
           md,
           sessionId: md // Include the session ID from Cybersource
         })
