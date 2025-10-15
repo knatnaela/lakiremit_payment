@@ -25,6 +25,8 @@ export default function ProcessChallenge() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             authenticationTransactionId: transactionId,
+            // Force SPA indicator for authenticated flow
+            ecommerceIndicatorAuth: 'spa',
             merchantData: md,
             // Add any other required fields from your form state here
           })

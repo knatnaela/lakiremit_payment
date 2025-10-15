@@ -49,6 +49,8 @@ export class CardinalCommerceListener {
   }
 
   private handleCardinalCommerceMessage(event: MessageEvent) {
+    console.log('Cardinal Commerce message received from origin:', event.origin)
+    console.log('Cardinal Commerce raw message data:', event.data)
     
     // Parse the message data if it's a string
     let messageData = event.data
@@ -56,14 +58,19 @@ export class CardinalCommerceListener {
     if (typeof event.data === 'string') {
       try {
         messageData = JSON.parse(event.data)
+        console.log('Cardinal Commerce parsed message data:', messageData)
       } catch (error) {
+        console.log('Cardinal Commerce message parsing error:', error)
         return
       }
     }
     
     // Call the message handler
     if (this.messageHandler) {
+      console.log('Calling Cardinal Commerce message handler')
       this.messageHandler(messageData);
+    } else {
+      console.log('No Cardinal Commerce message handler registered')
     }
   }
 

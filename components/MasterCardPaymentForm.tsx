@@ -12,12 +12,17 @@ import {
   TransactionResponse
 } from '@/types/payment'
 import ChallengeIframe from './ChallengeIframe'
-import { CardinalCommerceListener } from './CardinalCommerceListener'
-import { decodeJWT, generateUUID } from '@/utils/utils'
+import { decodeJWT } from '@/utils/utils'
 import AddressForm from './AddressForm'
 import { useSearchParams } from 'next/navigation'
 import { API_CONFIG, API_ENDPOINTS, buildApiUrl, CHALLENGE_URLS } from '@/constants/api'
 
+// Global type declaration for Mastercard PaymentSession
+declare global {
+  interface Window {
+    PaymentSession: any
+  }
+}
 
 // Card type mapping for Cybersource
 const CARD_TYPE_CODES = {
@@ -47,51 +52,45 @@ const CARD_TYPE_CODES = {
 
 // Countries are now handled by the AddressForm component
 
-export default function PaymentForm() {
-  const [microformInstance, setMicroformInstance] = useState<MicroformInstance | null>(null)
+export default function MasterCardPaymentForm() {
+  // Mastercard Session SDK state
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [merchantId, setMerchantId] = useState<string | null>(null)
+  const [isPaymentSessionReady, setIsPaymentSessionReady] = useState(false)
+  const [isCardTokenized, setIsCardTokenized] = useState(false)
+  
+  // Core state variables
   const [isLoading, setIsLoading] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [paymentToken, setPaymentToken] = useState<string | null>(null)
-  const [cardType, setCardType] = useState<string>('unknown')
   const [step, setStep] = useState<'form' | 'processing' | '3ds-verification' | 'success' | 'failed'>('form')
   const [transactionId, setTransactionId] = useState<string | null>(null)
-  const [deviceDataCollected, setDeviceDataCollected] = useState(false)
-  const [cardinalSessionId, setCardinalSessionId] = useState<string | null>(null)
-  const [uuidSessionId, setUuidSessionId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const [clientIpAddress, setClientIpAddress] = useState<string>('')
-  const [checkoutToken, setCheckoutToken] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   
   // Transaction data state
   const [transaction, setTransaction] = useState<Transaction | null>(null)
   const [isLoadingTransaction, setIsLoadingTransaction] = useState(false)
   const [transactionError, setTransactionError] = useState<string | null>(null)
-  
-  // 3D Secure Authentication States
-  const [isAuthenticating, setIsAuthenticating] = useState(false)
-  const [accessToken, setAccessToken] = useState<string | null>(null)
-  const [ddcUrl, setDdcUrl] = useState<string | null>(null)
 
   // Challenge Flow States
   const [showChallenge, setShowChallenge] = useState(false)
   const [challengeStepUpUrl, setChallengeStepUpUrl] = useState<string | null>(null)
-
   const [challengeAccessToken, setChallengeAccessToken] = useState<string | null>(null);
   const [pareq, setPareq] = useState<string | null>(null);
-  const autoPaymentTriggeredRef = useRef(false);
-  const [isCollectingDeviceData, setIsCollectingDeviceData] = useState(false)
   const initializationStartedRef = useRef(false);
 
-  const cardNumberRef = useRef<HTMLDivElement>(null)
-  const cvvRef = useRef<HTMLDivElement>(null)
+     // Mastercard field refs
+   const cardNumberRef = useRef<HTMLDivElement>(null)
+   const cvvRef = useRef<HTMLDivElement>(null)
+   const expiryMonthRef = useRef<HTMLDivElement>(null)
+   const expiryYearRef = useRef<HTMLDivElement>(null)
+  
+  // Legacy refs (keeping for compatibility)
   const currentTokenRef = useRef<string | null>(null)
 
-  // Prevent hydration mismatch and generate UUID session ID
+  // Prevent hydration mismatch
   useEffect(() => {
     setMounted(true)
-    // Generate UUID session ID for device fingerprinting
-    setUuidSessionId(generateUUID())
   }, [])
 
   // Get client IP address
@@ -146,6 +145,9 @@ export default function PaymentForm() {
   const searchParams = useSearchParams()
 
   const getAuthToken = () => {
+    if (process.env.NODE_ENV === 'development') {
+      return `Bearer ${process.env.BEARER_TOKEN}`;
+    }
     const cookies = document.cookie.split(';');
     const authCookie = cookies.find(cookie => cookie.trim().startsWith('access_token'));
     if (!authCookie) {return null}
@@ -208,7 +210,7 @@ export default function PaymentForm() {
       }
     }
     
-    fetchTransaction()
+    // fetchTransaction()
   }, [mounted, setValue, searchParams])
   
   // Helper function to get card type name
@@ -240,7 +242,7 @@ export default function PaymentForm() {
   // Initialize Cybersource Microform
   useEffect(() => {
     // Prevent duplicate initialization
-    if (isInitialized || checkoutToken || initializationStartedRef.current) {
+    if (isPaymentSessionReady || initializationStartedRef.current) {
       return
     }
     
@@ -311,230 +313,300 @@ export default function PaymentForm() {
       })
     }
     
-    const initializeMicroform = async () => {
+    const configurePaymentSession = (sessionId: string) => {
+      if (!sessionId || !window.PaymentSession) {
+        throw new Error('PaymentSession not available')
+      }
+
+             window.PaymentSession.configure({
+         session: sessionId,
+         fields: {
+           card: {
+             number: "#card-number",
+             securityCode: "#security-code",
+             expiryMonth: "#expiry-month",
+             expiryYear: "#expiry-year"
+           }
+         },
+         frameEmbeddingMitigation: ["javascript"],
+         locale: "en_US", // Set locale for better accessibility
+        callbacks: {
+                     initialized: (response: any) => {
+             if (response.status === "ok") {
+               console.log('✅ PaymentSession initialized successfully')
+             } else {
+               console.error('❌ PaymentSession initialization failed:', response)
+             }
+           },
+                                 formSessionUpdate: (response: any) => {
+              console.log('🔄 Form session update:', response)
+              
+              if (response.status === "ok") {
+                console.log('✅ Session updated successfully - card data tokenized')
+                setIsCardTokenized(true)
+                // Card data has been successfully tokenized
+              } else if (response.status === "fields_in_error") {
+                // Handle field validation errors with better messaging
+                const errorMessages = []
+                
+                if (response.errors?.cardNumber) {
+                  errorMessages.push('Card number is invalid or missing')
+                }
+                if (response.errors?.securityCode) {
+                  errorMessages.push('Security code is invalid')
+                }
+                if (response.errors?.expiryMonth) {
+                  errorMessages.push('Expiry month is required')
+                }
+                if (response.errors?.expiryYear) {
+                  errorMessages.push('Expiry year is required')
+                }
+                
+                if (errorMessages.length > 0) {
+                  toast.error(errorMessages.join(', '))
+                }
+              } else if (response.status === "request_timeout") {
+                toast.error('Request timeout - please try again')
+              } else if (response.status === "system_error") {
+                toast.error('System error - please contact support')
+              } else if (response.status === "session_expired") {
+                toast.error('Payment session expired - please refresh the page')
+              }
+            },
+          onCardTypeChange: (response: any) => {
+            console.log('Card type detected:', response.cardType)
+            // You can update UI based on card type here
+          },
+          onValidityChange: (response: any) => {
+            console.log('Field validity changed:', response.valid)
+          },
+          onFocus: (response: any) => {
+            console.log('Field focused:', response.fieldId)
+          },
+                     onBlur: (response: any) => {
+             console.log('Field blurred:', response.fieldId)
+           },
+           onFieldFocus: (response: any) => {
+             console.log('Field focused:', response.fieldId)
+             // Ensure proper focus handling for accessibility
+             if (response.fieldId === 'card.number') {
+               window.PaymentSession.setFocus('card.number')
+             }
+           }
+        },
+                 interaction: {
+           displayControl: {
+             formatCard: "EMBOSSED",
+             invalidFieldCharacters: "ALLOW" // Better for accessibility
+           }
+         }
+      })
+    }
+    
+    const createMastercardFields = () => {
+      // Create card number field
+      const cardNumberField = document.createElement('input')
+      cardNumberField.id = 'card-number'
+      cardNumberField.className = 'form-input'
+      cardNumberField.title = 'card number'
+      cardNumberField.setAttribute('aria-label', 'enter your card number')
+      cardNumberField.readOnly = true
+      cardNumberField.tabIndex = 1
+      
+      // Create CVV field
+      const cvvField = document.createElement('input')
+      cvvField.id = 'security-code'
+      cvvField.className = 'form-input'
+      cvvField.title = 'security code'
+      cvvField.setAttribute('aria-label', 'three digit CVV security code')
+      cvvField.readOnly = true
+      cvvField.tabIndex = 3
+      
+             // Create expiry month dropdown
+       const expiryMonthField = document.createElement('select')
+       expiryMonthField.id = 'expiry-month'
+       expiryMonthField.className = 'form-input'
+       expiryMonthField.title = 'expiry month'
+       expiryMonthField.setAttribute('aria-label', 'select expiry month')
+       expiryMonthField.setAttribute('readonly', 'true')
+       expiryMonthField.tabIndex = 2
+      
+      // Add month options
+      const monthOptions = [
+        { value: '', text: 'Select Month' },
+        { value: '01', text: 'January' },
+        { value: '02', text: 'February' },
+        { value: '03', text: 'March' },
+        { value: '04', text: 'April' },
+        { value: '05', text: 'May' },
+        { value: '06', text: 'June' },
+        { value: '07', text: 'July' },
+        { value: '08', text: 'August' },
+        { value: '09', text: 'September' },
+        { value: '10', text: 'October' },
+        { value: '11', text: 'November' },
+        { value: '12', text: 'December' }
+      ]
+      
+      monthOptions.forEach(option => {
+        const optionElement = document.createElement('option')
+        optionElement.value = option.value
+        optionElement.textContent = option.text
+        expiryMonthField.appendChild(optionElement)
+      })
+      
+             // Create expiry year dropdown
+       const expiryYearField = document.createElement('select')
+       expiryYearField.id = 'expiry-year'
+       expiryYearField.className = 'form-input'
+       expiryYearField.title = 'expiry year'
+       expiryYearField.setAttribute('aria-label', 'select expiry year')
+       expiryYearField.setAttribute('readonly', 'true')
+       expiryYearField.tabIndex = 4
+      
+      // Add year options (current year + 20 years)
+      const currentYear = new Date().getFullYear()
+      const yearOptions = [{ value: '', text: 'Select Year' }]
+      
+      for (let i = 0; i < 20; i++) {
+        const year = currentYear + i
+        const optionElement = document.createElement('option')
+        optionElement.value = year.toString()
+        optionElement.textContent = year.toString()
+        expiryYearField.appendChild(optionElement)
+      }
+      
+      // Load fields into containers
+      if (cardNumberRef.current) {
+        cardNumberRef.current.appendChild(cardNumberField)
+      }
+      if (cvvRef.current) {
+        cvvRef.current.appendChild(cvvField)
+      }
+      if (expiryMonthRef.current) {
+        expiryMonthRef.current.appendChild(expiryMonthField)
+      }
+      if (expiryYearRef.current) {
+        expiryYearRef.current.appendChild(expiryYearField)
+      }
+    }
+    
+    
+    
+    
+    
+    const loadMastercardScript = (merchantId: string): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        const existingScript = document.querySelector(`script[src*="test-gateway.mastercard.com"]`)
+        if (existingScript) {
+          if (typeof window.PaymentSession === 'object') {
+            resolve()
+          } else {
+            existingScript.addEventListener('load', () => resolve())
+            existingScript.addEventListener('error', () => reject(new Error('Script failed to load')))
+          }
+          return
+        }
+
+                 const script = document.createElement('script')
+         script.src = `https://test-gateway.mastercard.com/form/version/100/merchant/${merchantId}/session.js`
+        script.onload = () => {
+          let attempts = 0
+          const maxAttempts = 100
+          
+          const waitForPaymentSession = () => {
+            if (window.PaymentSession && typeof window.PaymentSession.configure === 'function') {
+              resolve()
+            } else {
+              attempts++
+              if (attempts >= maxAttempts) {
+                reject(new Error('PaymentSession library failed to initialize after script load'))
+                return
+              }
+              setTimeout(waitForPaymentSession, 50)
+            }
+          }
+          waitForPaymentSession()
+        }
+        script.onerror = () => {
+          reject(new Error('Failed to load Mastercard script'))
+        }
+        
+        document.head.appendChild(script)
+      })
+    }
+    
+    const initializeMastercardSession = async () => {
       try {
-        // Get microform token from backend
+        console.log('🔄 Initializing Mastercard provider...')
+        
+        // Get session from backend
         const transactionId = searchParams.get('transactionId')
         
         if (!transactionId) {
           throw new Error('No transaction ID provided in URL')
         }
         
-        const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.CHECKOUT_TOKEN), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-           'transactionId': transactionId
-          })
-        })
+        // const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.CHECKOUT_TOKEN), {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify({
+        //     'transactionId': transactionId,
+        //     'provider': 'mastercard'
+        //   })
+        // })
         
-        const data = await response.json()
+        // const data = await response.json()
         
-        if (data.result !== 'SUCCESS') {
-          throw new Error(`Backend API returned error: ${data.result}. Errors: ${data.readableErrorMessages?.join(', ') || 'Unknown error'}`)
-        }
+        // if (data.result !== 'SUCCESS') {
+        //   throw new Error(`Backend API returned error: ${data.result}. Errors: ${data.readableErrorMessages?.join(', ') || 'Unknown error'}`)
+        // }
         
-        if (!data.token) {
-          throw new Error('No token received from backend API')
-        }
+        // if (!data.sessionId || !data.merchantId) {
+        //   throw new Error('No session ID or merchant ID received from backend API')
+        // }
         
-        // Store the checkout token for later use
-        setCheckoutToken(data.token)
+        console.log('✅ Session and merchant ID received')
         
-        // Decode JWT to get script URL and integrity
-        const decodedJWT = decodeJWT(data.token)
-        const clientLibrary = decodedJWT.ctx?.[0]?.data?.clientLibrary
-        const clientLibraryIntegrity = decodedJWT.ctx?.[0]?.data?.clientLibraryIntegrity
+        // Store session data
+        setSessionId("SESSION0002374325869H8155308I45")
+        setMerchantId("010100100111")
         
-        if (!clientLibrary || !clientLibraryIntegrity) {
-          throw new Error('Missing clientLibrary or clientLibraryIntegrity in JWT')
-        }
+        // Load Mastercard script
+        await loadMastercardScript("010100100111")
         
-        // Load the correct script with integrity check
-        await loadCybersourceScript(clientLibrary, clientLibraryIntegrity)
+                 // Create field elements
+         createMastercardFields()
+         
+         // Verify fields were created
+         console.log('🔍 Checking field creation:', {
+           cardNumber: !!document.getElementById('card-number'),
+           securityCode: !!document.getElementById('security-code'),
+           expiryMonth: !!document.getElementById('expiry-month'),
+           expiryYear: !!document.getElementById('expiry-year')
+         })
+         
+         // Configure PaymentSession
+         configurePaymentSession("SESSION0002374325869H8155308I45")
+         
+         // Don't apply styling here - wait for PaymentSession to be fully initialized
+         // The styling will be applied in the 'initialized' callback
+         
+         setIsPaymentSessionReady(true)
         
-        // Initialize Flex SDK with the capture context (JWT token)
-        if (!window.Flex) {
-          throw new Error('Cybersource Flex library is not available')
-        }
-        const flex = new window.Flex(data.token)
-        
-        // Create microform with basic styling
-        const microform = flex.microform({ 
-          styles: {
-            'input': {
-              'font-size': '16px',
-              'color': '#374151'
-            }
-          }
-        })
-        setMicroformInstance(microform)
-
-        // Create and load microform fields following official documentation
-        const numberField = microform.createField('number', {
-          placeholder: 'Card Number'
-        })
-        
-        const securityCodeField = microform.createField('securityCode', {
-          placeholder: 'CVV'
-        })
-        
-        // Load fields into containers
-        if (cardNumberRef.current) {
-          numberField.load(cardNumberRef.current)
-          
-          // Add field validation listeners
-          numberField.on('change', () => {
-            // Handle card number validation silently
-          })
-          
-          numberField.on('error', () => {
-            toast.error('Card number field error')
-          })
-        }
-
-        if (cvvRef.current) {
-          securityCodeField.load(cvvRef.current)
-          
-          // Add field validation listeners
-          securityCodeField.on('change', () => {
-            // Handle security code validation silently
-          })
-          
-          securityCodeField.on('error', () => {
-            toast.error('Security code field error')
-          })
-        }
-        
-        // Note: Cardinal Commerce listener is set up in a separate useEffect to avoid conflicts
-
-        // Note: Cardinal Commerce form will be submitted after authentication setup
-        // when accessToken and ddcUrl are available (like visa-aft)
-
-        setIsInitialized(true)
+        console.log('✅ Mastercard Session SDK initialized successfully')
         
       } catch (error) {
-        toast.error(`Failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+        console.error('❌ Failed to initialize Mastercard:', error)
+        toast.error(`Failed to initialize: ${errorMsg}`)
       }
     }
 
-    initializeMicroform()
-    
-    // Cleanup function to stop the listener when component unmounts
-    return () => {
-      const cardinalListener = CardinalCommerceListener.getInstance();
-      cardinalListener.stopListening();
-    }
+    initializeMastercardSession()
   }, [mounted, searchParams]) // Run when mounted or search params change
 
-  // Process payment with collected device data
-  const processPaymentWithDeviceData = async (sessionId: string, data: PaymentFormData) => {
-    try {
-      // Validate that we have transaction data
-      if (!transaction) {
-        throw new Error('Transaction data not available')
-      }
-      
-      // Collect comprehensive device information with the real session ID
-      const deviceInfo = collectDeviceInformation(sessionId)
-      
-      // Create payment request with all collected data
-      const paymentRequest = {
-        transientToken: currentTokenRef.current || paymentToken,
-        flexResponse: currentTokenRef.current || paymentToken,
-        cardHolder: `${data.firstName} ${data.lastName}`,
-        currency: transaction.currency,
-        totalAmount: transaction.totalAmount.toString(),
-        returnUrl: CHALLENGE_URLS.RESULT_CALLBACK,
-        merchantReference:  transaction.transactionId,
-        ecommerceIndicatorAuth: 'internet',
-        // Personal information
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email,
-        saveCard: data.saveCard || false,
-        // Billing address information
-        ...getAddressData(data),
-        // Device information
-        ...deviceInfo
-      }
-
-      console.log('API Request (COMBINED):', { endpoint: buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED), payload: paymentRequest })
-      const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentRequest)
-      })
-
-      const responseData = await response.json()
-      console.log('API Response (COMBINED):', { status: response.status, data: responseData })
-
-      if (responseData.result === 'SUCCESS') {
-        const paymentResponse = responseData.paymentResponse;
-        setStep('success');
-        setTransactionId(paymentResponse?.id || paymentResponse?.transactionId);
-        toast.success('Payment successful!');
-        const paymentResponseStatus = paymentResponse.status;
-        if (paymentResponseStatus === 'PENDING_AUTHENTICATION') {
-          // Handle 3DS challenge
-          const paymentData = responseData.paymentResponse;
-          const stepUpUrl = paymentData.consumerAuthenticationInformation?.stepUpUrl;
-          const authTransactionId = paymentData.consumerAuthenticationInformation?.authenticationTransactionId;
-          const clientRefInfo = paymentData.clientReferenceInformation;
-          const merchantRef = clientRefInfo?.code || 'order-' + Date.now();
-          
-          const pareqValue = paymentData.consumerAuthenticationInformation?.pareq;
-          const accessToken = paymentData.consumerAuthenticationInformation?.accessToken;
-
-          // Store payment data in localStorage for the challenge completion
-          const challengeData = {
-            authenticationTransactionId: authTransactionId,
-            transactionID: paymentData.id,
-            currency: transaction.currency,
-            totalAmount: transaction.totalAmount.toString(),
-            transientToken: currentTokenRef.current || paymentToken,
-            merchantReference: merchantRef,
-            ecommerceIndicatorAuth: 'internet',
-            ipAddress: deviceInfo.ipAddress,
-            deviceIpAddress: deviceInfo.deviceIpAddress,
-            fingerprintSessionId: deviceInfo.fingerprintSessionId,
-            deviceFingerprintId: deviceInfo.deviceFingerprintId,
-            cardinalSessionId: deviceInfo.cardinalSessionId,
-            deviceSessionId: deviceInfo.deviceSessionId,
-            deviceUserAgent: deviceInfo.deviceUserAgent,
-            userAgentBrowserValue: deviceInfo.userAgentBrowserValue,
-            firstName: data.firstName,
-            lastName: data.lastName,
-            email: data.email,
-            // Billing address information
-            ...getAddressData(data)
-          };
-          localStorage.setItem('challengeData', JSON.stringify(challengeData));
-          
-          if (stepUpUrl && pareqValue && accessToken) {
-            
-            setStep('3ds-verification'); // Set step to 3DS verification
-            setChallengeStepUpUrl(stepUpUrl)
-            setChallengeAccessToken(accessToken)
-            setPareq(pareqValue);
-            setShowChallenge(true)
-          } else {
-            throw new Error('Missing challenge data from payment response')
-        }
-        }
-      } else {
-        const errorMsg = responseData.error || responseData.message || 'Payment failed';
-        throw new Error(errorMsg);
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Payment failed';
-      setErrorMessage(errorMsg);
-      setStep('failed');
-      toast.error(errorMsg);
-    } finally {
-      setIsAuthenticating(false)
-    }
-  }
+ 
 
   // 3D Secure Authentication Functions
 
@@ -608,39 +680,10 @@ export default function PaymentForm() {
 
   }, [])
 
-  // Collect device information from browser
-  const collectDeviceInformation = (sessionId?: string) => {
-    // Use the provided session ID, UUID session ID, or fall back to Cardinal session ID
-    const fingerprintSessionId = sessionId || uuidSessionId || cardinalSessionId || `mock-session-${Date.now()}`
-    
-    const deviceInfo = {
-      ipAddress: clientIpAddress || '127.0.0.1', // Use localhost as fallback if IP not available
-      deviceIpAddress: clientIpAddress || '127.0.0.1',
-      fingerprintSessionId: fingerprintSessionId, // Use generated UUID session ID
-      // Common aliases to maximize backend compatibility
-      deviceFingerprintId: fingerprintSessionId,
-      cardinalSessionId: fingerprintSessionId,
-      deviceSessionId: fingerprintSessionId,
-      // Additional device information fields
-      httpAcceptBrowserValue: navigator.userAgent.includes('Chrome') ? 'application/json' : 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      httpAcceptContent: navigator.userAgent.includes('Chrome') ? 'application/json' : 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      httpBrowserLanguage: navigator.language || 'en-US',
-      httpBrowserJavaEnabled: false, // Java is typically disabled in modern browsers
-      httpBrowserJavaScriptEnabled: true, // We're running JavaScript, so it's enabled
-      httpBrowserColorDepth: screen.colorDepth?.toString() || '24',
-      httpBrowserScreenHeight: screen.height?.toString() || '1280',
-      httpBrowserScreenWidth: screen.width?.toString() || '1280',
-      httpBrowserTimeDifference: new Date().getTimezoneOffset().toString(),
-      userAgentBrowserValue: navigator.userAgent,
-      deviceUserAgent: navigator.userAgent
-    }
-    
-    return deviceInfo
-  }
+
 
   const onSubmit = async (data: PaymentFormData) => {
-    let tokenizedToken: string | null = null;
-    if (!microformInstance) {
+    if (!isPaymentSessionReady || !sessionId) {
       toast.error('Payment form not initialized')
       return
     }
@@ -651,17 +694,8 @@ export default function PaymentForm() {
       return
     }
 
-    // Validate that required fields are present
-    if (!data.expirationMonth || !data.expirationYear) {
-      toast.error('Please select card expiration month and year')
-      return
-    }
-
-    // Reset auto-payment trigger to allow manual submission
-    autoPaymentTriggeredRef.current = false
-
-    // Check if Cybersource fields are loaded
-    if (!cardNumberRef.current || !cvvRef.current) {
+    // Check if Mastercard fields are loaded
+    if (!cardNumberRef.current || !cvvRef.current || !expiryMonthRef.current || !expiryYearRef.current) {
       toast.error('Payment fields not loaded. Please refresh the page.')
       return
     }
@@ -669,141 +703,101 @@ export default function PaymentForm() {
     setIsLoading(true)
 
     try {
-      // Step 1: Tokenize card
-      await new Promise<void>((resolve, reject) => {
-        microformInstance.createToken({
-          expirationMonth: data.expirationMonth,
-          expirationYear: data.expirationYear,
-        }, (err: any, token: string) => {
-          if (err) {
-            reject(new Error(err.message || 'Tokenization failed'))
-            return
-          }
-          tokenizedToken = token;
-          const decodedToken: FlexTokenPayload = decodeJWT(token);
-          const detectedCardTypes = decodedToken.content.paymentInformation.card.number.detectedCardTypes;
-          const cardTypeCode = detectedCardTypes?.[0] || '001';
-          setCardType(cardTypeCode);
-          
-          resolve()
-        })
-      })
-
-      if (!tokenizedToken) {
-        throw new Error('Tokenization failed - no token received')
+      console.log('🔄 Processing payment with Mastercard Session SDK...')
+      
+      // Step 1: Tokenize card data using PaymentSession
+      if (!window.PaymentSession) {
+        throw new Error('PaymentSession not available')
       }
 
-      // Store the tokenized token for later use in processPayment
-      setPaymentToken(tokenizedToken)
-      currentTokenRef.current = tokenizedToken
-
-      // Step 2: Check if device data collection is already complete
-      if (deviceDataCollected && cardinalSessionId) {
-        processPaymentWithDeviceData(uuidSessionId!, data)
-        setIsLoading(false)
-        return
-      }
-
-      // Step 3: Submit to backend for authentication setup
-      // Use the existing checkout token from initialization instead of generating a new one
-      const authSetupRequest = {
-        transientToken: tokenizedToken,
+      // Update session with form data to trigger tokenization
+      window.PaymentSession.updateSessionFromForm('card')
+      
+      // Wait a moment for tokenization to complete
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Step 2: Process payment with tokenized session ID
+      const paymentRequest = {
+        sessionId: sessionId, // Use Mastercard session ID (contains tokenized card data)
         cardHolder: `${data.firstName} ${data.lastName}`,
         currency: transaction.currency,
         totalAmount: transaction.totalAmount.toString(),
-        paReference: 'ref-' + Date.now(),
         returnUrl: CHALLENGE_URLS.RESULT_CALLBACK,
         merchantReference: transaction.transactionId,
         ecommerceIndicatorAuth: 'internet',
-        isSaveCard: data.saveCard || false,
-        // Card type information
-        cardType: cardType,
-        cardTypeName: getCardTypeName(cardType),
+        // Personal information
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email,
+        saveCard: data.saveCard || false,
         // Billing address information
         ...getAddressData(data)
       }
 
-      console.log('API Request (COMBINED_INIT):', { endpoint: buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED_INIT), payload: authSetupRequest })
-      const authResponse = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED_INIT), {
+      const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authSetupRequest)
+        body: JSON.stringify(paymentRequest)
       })
 
-      const authResponseData = await authResponse.json()
-      console.log('API Response (COMBINED_INIT):', { status: authResponse.status, data: authResponseData })
+      const responseData = await response.json()
 
-      if (authResponseData.result !== 'SUCCESS') {
-        throw new Error(authResponseData.error || 'Authentication setup failed')
-      }
-
-      // Extract authentication setup data
-      const authSetup = authResponseData.authenticationSetup
-      if (!authSetup) {
-        throw new Error('No authentication setup data received')
-      }
-
-      // Extract data from the nested structure
-      const consumerAuthInfo = authSetup.consumerAuthenticationInformation
-      
-      if (!consumerAuthInfo) {
-        throw new Error('No consumer authentication information received')
-      }
-
-      const accessToken = consumerAuthInfo.accessToken
-      const ddcUrl = consumerAuthInfo.deviceDataCollectionUrl
-
-      // Step 4: Trigger device data collection
-      setIsAuthenticating(true)
-      setIsCollectingDeviceData(true)
-      
-      const cardinalCollectionForm = document.querySelector('#cardinal_collection_form') as HTMLFormElement
-      if (cardinalCollectionForm && ddcUrl && accessToken && uuidSessionId) {
-        // Build Cardinal Commerce URL with organization ID and session ID
-        // The ddcUrl from Setup service is the base URL, we need to add orgId and sessionId
-        const cardinalUrl = `${ddcUrl}?orgId=aby_0385_lakiremit&sessionId=${uuidSessionId}`
+      if (responseData.result === 'SUCCESS') {
+        const paymentResponse = responseData.paymentResponse;
         
-        // Update form action and JWT
-        cardinalCollectionForm.action = cardinalUrl
-        const jwtInput = cardinalCollectionForm.querySelector('#cardinal_collection_form_input') as HTMLInputElement
-        if (jwtInput) {
-          jwtInput.value = accessToken
-        }
-        
-        console.log('Submitting Cardinal Commerce form with:', {
-          url: cardinalUrl,
-          accessToken: accessToken.substring(0, 20) + '...',
-          sessionId: uuidSessionId
-        })
-        
-        cardinalCollectionForm.submit()
-        
-        // Set a timeout to reset collecting state if Cardinal Commerce doesn't respond
-        setTimeout(() => {
-          if (isCollectingDeviceData) {
-            console.log('Cardinal Commerce timeout - assuming device data collection complete')
-            setIsCollectingDeviceData(false)
-            setDeviceDataCollected(true)
+        if (paymentResponse.status === 'PENDING_AUTHENTICATION') {
+          // Handle 3DS challenge
+          const stepUpUrl = paymentResponse.consumerAuthenticationInformation?.stepUpUrl;
+          const pareqValue = paymentResponse.consumerAuthenticationInformation?.pareq;
+          const accessToken = paymentResponse.consumerAuthenticationInformation?.accessToken;
+          const authTransactionId = paymentResponse.consumerAuthenticationInformation?.authenticationTransactionId;
+          
+          if (stepUpUrl && pareqValue && accessToken) {
+            // Store payment data in localStorage for the challenge completion
+            const challengeData = {
+              authenticationTransactionId: authTransactionId,
+              transactionID: paymentResponse.id,
+              currency: transaction.currency,
+              totalAmount: transaction.totalAmount.toString(),
+              sessionId: sessionId,
+              merchantReference: transaction.transactionId,
+              ecommerceIndicatorAuth: 'internet',
+              firstName: data.firstName,
+              lastName: data.lastName,
+              email: data.email,
+              // Billing address information
+              ...getAddressData(data)
+            };
+            localStorage.setItem('challengeData', JSON.stringify(challengeData));
+            
+            setStep('3ds-verification');
+            setChallengeStepUpUrl(stepUpUrl)
+            setChallengeAccessToken(accessToken)
+            setPareq(pareqValue);
+            setShowChallenge(true)
+          } else {
+            throw new Error('Missing challenge data from payment response')
           }
-        }, 10000) // 10 second timeout
+        } else {
+          // Payment successful without 3DS
+          setStep('success');
+          setTransactionId(paymentResponse?.id || paymentResponse?.transactionId);
+          toast.success('Payment successful!');
+        }
       } else {
-        throw new Error('Cardinal Commerce form not found or missing accessToken/ddcUrl/uuidSessionId')
+        const errorMsg = responseData.error || responseData.message || 'Payment failed';
+        throw new Error(errorMsg);
       }
 
-      // Store the authentication data for the next submission
-      setAccessToken(accessToken)
-      setDdcUrl(ddcUrl)
-      setIsAuthenticating(false)
-
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Payment failed')
-      setIsAuthenticating(false)
-    } finally {
-      setIsLoading(false)
-    }
+         } catch (error) {
+       const errorMsg = error instanceof Error ? error.message : 'Payment failed';
+       setErrorMessage(errorMsg);
+       setStep('failed');
+       setIsCardTokenized(false); // Reset tokenization status on error
+       toast.error(errorMsg);
+     } finally {
+       setIsLoading(false)
+     }
   }
 
   const handleChallengeComplete = async (transactionId: string, md?: string) => {
@@ -818,7 +812,6 @@ export default function PaymentForm() {
       const challengeData = JSON.parse(storedChallengeData);
 
       // Send the final payment request to the backend
-      console.log('API Request (COMBINED_AFTER_CHALLENGE):', { endpoint: buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED_AFTER_CHALLENGE), payload: { ...challengeData, transactionId, ...(md && { md }) } })
       const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.COMBINED_AFTER_CHALLENGE), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -834,7 +827,6 @@ export default function PaymentForm() {
       });
 
       const responseData = await response.json();
-      console.log('API Response (COMBINED_AFTER_CHALLENGE):', { status: response.status, data: responseData })
 
       if (responseData.result === 'SUCCESS') {
         setStep('success');
@@ -861,59 +853,7 @@ export default function PaymentForm() {
     }
   };
 
-  // Update the Cardinal Commerce listener to handle device data collection state
-  useEffect(() => {
-    const cardinalListener = CardinalCommerceListener.getInstance();
-    
-    // Handle Cardinal Commerce messages
-    const handleCardinalMessage = (messageData: any) => {
-      console.log('Cardinal Commerce message received:', messageData)
-      setIsAuthenticating(false)
-      
-      if (messageData.MessageType === "profile.completed" && messageData.Status === true) {
-        // Only process if we haven't already processed this session ID
-        if (!deviceDataCollected || cardinalSessionId !== uuidSessionId) {
-          setDeviceDataCollected(true)
-          setCardinalSessionId(uuidSessionId) // Use our generated UUID session ID
-          setIsCollectingDeviceData(false)
-          
-          console.log('Device fingerprinting completed with our UUID session ID:', uuidSessionId)
-          
-          // Auto-proceed to payment processing since we have all required data (only once)
-          if (!autoPaymentTriggeredRef.current) {
-            autoPaymentTriggeredRef.current = true
-            
-            // Get the current form data and proceed with payment
-            const currentFormData = watch()
-            
-            
-          if (transaction && currentFormData.firstName && currentFormData.lastName && currentFormData.email && uuidSessionId) {
-            setTimeout(() => {
-              processPaymentWithDeviceData(uuidSessionId!, currentFormData)
-            }, 100)
-          }
-          }
-        } else {
-          console.log('Device fingerprinting already completed for session ID:', messageData.SessionId)
-        }
-      } else if (messageData.MessageType === "profile.error") {
-        setIsCollectingDeviceData(false)
-        console.log('Device fingerprinting failed, but payment can still proceed')
-        // Handle error silently - user can still proceed with payment
-      } else {
-        console.log('Unknown Cardinal Commerce message type:', messageData.MessageType)
-      }
-    };
 
-    // Set up listener
-    cardinalListener.startListening(handleCardinalMessage);
-    console.log('Cardinal Commerce listener started')
-
-    return () => {
-      cardinalListener.stopListening();
-      console.log('Cardinal Commerce listener stopped')
-    }
-  }, [transaction, watch, processPaymentWithDeviceData]);
 
   const getButtonContent = () => {
     if (isLoadingTransaction) {
@@ -948,36 +888,28 @@ export default function PaymentForm() {
         </>
       )
     }
-    if (isAuthenticating) {
-      return (
-        <>
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span>Verifying Card...</span>
-        </>
-      )
-    }
-    if (isCollectingDeviceData) {
-      return (
-        <>
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span>Collecting Device Data...</span>
-        </>
-      )
-    }
-    if (deviceDataCollected && cardinalSessionId) {
-      return (
-        <>
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span>Processing Payment...</span>
-        </>
-      )
-    }
-    return (
-      <>
-        <Lock className="h-5 w-5" />
-        <span>Pay Securely</span>
-      </>
-    )
+         if (!isPaymentSessionReady) {
+       return (
+         <>
+           <Loader2 className="h-5 w-5 animate-spin" />
+           <span>Initializing Payment Form...</span>
+         </>
+       )
+     }
+     if (!isCardTokenized) {
+       return (
+         <>
+           <Loader2 className="h-5 w-5 animate-spin" />
+           <span>Validating Card...</span>
+         </>
+       )
+     }
+     return (
+       <>
+         <Lock className="h-5 w-5" />
+         <span>Pay Securely</span>
+       </>
+     )
   }
 
   if (step === 'success') {
@@ -1099,41 +1031,18 @@ export default function PaymentForm() {
 
   return (
     <>
-      {/* Cardinal Commerce Device Data Collection - Outside main form */}
-      <iframe 
-        id="cardinal_collection_iframe" 
-        name="collectionIframe" 
-        height="10" 
-        width="10" 
-        style={{ display: 'none' }}
-      />
-      <form 
-        id="cardinal_collection_form" 
-        method="POST" 
-        target="collectionIframe"
-        action={ddcUrl ?? ''}
-        style={{ display: 'none' }}
-      >
-        <input 
-          id="cardinal_collection_form_input" 
-          type="hidden" 
-          name="JWT"
-          value={accessToken || ''}
-        />
-      </form>
-
       <form onSubmit={handleSubmit(onSubmit)} className="card p-8">
-      <div className="flex items-center justify-center mb-6">
-        <div className="flex items-center space-x-2">
-          <Lock className="h-5 w-5 text-green-600" />
-          <span className="text-sm text-gray-600">Secured by Cybersource</span>
-          {transaction && (
-            <span className="text-xs text-gray-400 ml-4">
-              ID: {transaction.transactionId}
-            </span>
-          )}
-        </div>
-      </div>
+             <div className="flex items-center justify-center mb-6">
+         <div className="flex items-center space-x-2">
+           <Lock className="h-5 w-5 text-green-600" />
+           <span className="text-sm text-gray-600">Secured by Mastercard</span>
+           {transaction && (
+             <span className="text-xs text-gray-400 ml-4">
+               ID: {transaction.transactionId}
+             </span>
+           )}
+         </div>
+       </div>
 
       {/* Transaction Loading State */}
       {isLoadingTransaction && (
@@ -1274,23 +1183,14 @@ export default function PaymentForm() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="form-label">
-              Card Number * {(() => {
-                const cardTypeName = CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]
-                return cardTypeName ? `${cardTypeName} 💳` : '💳'
-              })()}
+              Card Number * 💳
             </label>
             <div
               ref={cardNumberRef}
-              className="microform-field bg-white"
+              className="form-input bg-white"
               style={{ minHeight: '48px' }}
             />
-            {cardType !== 'unknown' && CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES] && (
-              <div className="mt-2 text-sm text-green-600 flex items-center">
-                <CheckCircle className="h-4 w-4 mr-1" />
-                {CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]} detected
-              </div>
-            )}
-            {mounted && !isInitialized && (
+            {mounted && !isPaymentSessionReady && (
               <div className="flex items-center mt-2 text-sm text-gray-500">
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Loading secure card input...
@@ -1304,55 +1204,37 @@ export default function PaymentForm() {
             </label>
             <div
               ref={cvvRef}
-              className="microform-field bg-white"
+              className="form-input bg-white"
               style={{ minHeight: '48px' }}
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label htmlFor="expirationMonth" className="form-label">
+            <label className="form-label">
               Expiration Month *
             </label>
-            <select
-              id="expirationMonth"
-              className="form-input"
-              {...register('expirationMonth', { required: 'Month is required' })}
-            >
-              <option value="">Month</option>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                <option key={month} value={month.toString().padStart(2, '0')}>
-                  {month.toString().padStart(2, '0')} - {new Date(0, month - 1).toLocaleString('default', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-            {errors.expirationMonth && (
-              <p className="form-error">{errors.expirationMonth.message}</p>
-            )}
+            <div
+              ref={expiryMonthRef}
+              className="form-input bg-white"
+              style={{ minHeight: '48px' }}
+            />
           </div>
 
           <div>
-            <label htmlFor="expirationYear" className="form-label">
+            <label className="form-label">
               Expiration Year *
             </label>
-            <select
-              id="expirationYear"
-              className="form-input"
-              {...register('expirationYear', { required: 'Year is required' })}
-            >
-              <option value="">Year</option>
-              {Array.from({ length: 20 }, (_, i) => new Date().getFullYear() + i).map(year => (
-                <option key={year} value={year.toString()}>
-                  {year}
-                </option>
-              ))}
-            </select>
-            {errors.expirationYear && (
-              <p className="form-error">{errors.expirationYear.message}</p>
-            )}
+            <div
+              ref={expiryYearRef}
+              className="form-input bg-white"
+              style={{ minHeight: '48px' }}
+            />
           </div>
         </div>
+
+        
       </div>
 
       {/* Billing Address */}
@@ -1389,72 +1271,58 @@ export default function PaymentForm() {
       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <div className="flex items-start">
           <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
-          <div className="text-sm text-blue-800">
-            <p className="font-medium mb-1">Your payment is secure</p>
-            <p>Your card information is encrypted and processed securely through Cybersource. We never store your card details.</p>
-          </div>
+                     <div className="text-sm text-blue-800">
+             <p className="font-medium mb-1">Your payment is secure</p>
+             <p>Your card information is encrypted and processed securely through Mastercard's hosted payment fields. We never store your card details.</p>
+           </div>
         </div>
       </div>
 
-      {/* 3D Secure Status */}
-      {mounted && isAuthenticating && (
-        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <div className="flex items-start">
-            <Loader2 className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
-            <div className="text-sm text-yellow-800">
-              <p className="font-medium mb-1">3D Secure Verification</p>
-              <p>Please wait while we verify your card with your bank...</p>
+                    {/* Mastercard Session Status */}
+        {mounted && !isPaymentSessionReady && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start">
+              <Loader2 className="h-5 w-5 text-blue-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-1">Initializing Payment Form</p>
+                <p>Please wait while we securely initialize the payment form...</p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {mounted && deviceDataCollected && !isAuthenticating && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-start">
-            <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
-            <div className="text-sm text-green-800">
-              <p className="font-medium mb-1">Card Verification Complete</p>
-              <p>Your card has been verified successfully. Processing payment...</p>
+        {/* Card Validation Status */}
+        {mounted && isPaymentSessionReady && !isCardTokenized && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-start">
+              <Loader2 className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
+              <div className="text-sm text-yellow-800">
+                <p className="font-medium mb-1">Validating Card Information</p>
+                <p>Please enter your card details to continue...</p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Device Data Collection Status */}
-      {mounted && isCollectingDeviceData && (
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-start">
-            <Loader2 className="h-5 w-5 text-blue-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
-            <div className="text-sm text-blue-800">
-              <p className="font-medium mb-1">Collecting Device Data</p>
-              <p>Please wait while we securely collect device information...</p>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
 
       {/* Submit Button */}
-      <button
-        type="submit"
-        disabled={
-          isLoading || 
-          !isInitialized || 
-          isAuthenticating || 
-          isCollectingDeviceData || 
-          isLoadingTransaction ||
-          !transaction ||
-          !!transactionError ||
-          (deviceDataCollected && !!cardinalSessionId && autoPaymentTriggeredRef.current)
-        }
-        className="btn-primary w-full flex items-center justify-center space-x-2"
-      >
+             <button
+         type="submit"
+         disabled={
+           isLoading || 
+           !isPaymentSessionReady || 
+           !isCardTokenized ||
+           isLoadingTransaction ||
+           !transaction ||
+           !!transactionError
+         }
+         className="btn-primary w-full flex items-center justify-center space-x-2"
+       >
         {getButtonContent()}
       </button>
 
-      {mounted && !isInitialized && (
+      {mounted && !isPaymentSessionReady && (
         <p className="text-center text-sm text-gray-500 mt-4">
-          {isLoadingTransaction ? 'Loading transaction...' : 'Initializing secure payment form...'}
+          {isLoadingTransaction ? 'Loading transaction...' : 'Initializing Mastercard payment form...'}
         </p>
       )}
       </form>
