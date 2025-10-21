@@ -8,8 +8,8 @@ export async function POST(request: NextRequest) {
     const md = formData.get('MD')
     const status = formData.get('Status')
 
-      const baseUrl = 'http://localhost:3000'
-      const html = `
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL
+    const html = `
         <!DOCTYPE html>
         <html>
         <head>
@@ -110,18 +110,18 @@ export async function POST(request: NextRequest) {
         </body>
         </html>
       `
-      
-      return new Response(html, {
-        headers: { 
-          'Content-Type': 'text/html',
-          'X-Frame-Options': 'SAMEORIGIN',
-          'Content-Security-Policy': "frame-ancestors 'self'"
-        }
-      })
-    
+
+    return new Response(html, {
+      headers: {
+        'Content-Type': 'text/html',
+        'X-Frame-Options': 'SAMEORIGIN',
+        'Content-Security-Policy': "frame-ancestors 'self'"
+      }
+    })
+
   } catch (error) {
     // Error in challenge-result
-    
+
     // Return error response with postMessage
     const errorHtml = `
       <!DOCTYPE html>
@@ -190,10 +190,10 @@ export async function POST(request: NextRequest) {
       </body>
       </html>
     `
-    
+
     return new Response(errorHtml, {
       status: 400,
-      headers: { 
+      headers: {
         'Content-Type': 'text/html',
         'X-Frame-Options': 'SAMEORIGIN'
       }
