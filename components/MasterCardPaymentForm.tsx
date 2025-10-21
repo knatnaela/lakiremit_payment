@@ -4,18 +4,15 @@ import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import { CreditCard, Lock, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
-import { 
-  PaymentFormData, 
-  MicroformInstance, 
-  FlexTokenPayload,
+import {
+  PaymentFormData,
   Transaction,
   TransactionResponse
 } from '@/types/payment'
 import ChallengeIframe from './ChallengeIframe'
-import { decodeJWT } from '@/utils/utils'
 import AddressForm from './AddressForm'
 import { useSearchParams } from 'next/navigation'
-import { API_CONFIG, API_ENDPOINTS, buildApiUrl, CHALLENGE_URLS } from '@/constants/api'
+import { API_ENDPOINTS, buildApiUrl, CHALLENGE_URLS } from '@/constants/api'
 
 // Global type declaration for Mastercard PaymentSession
 declare global {
@@ -24,49 +21,23 @@ declare global {
   }
 }
 
-// Card type mapping for Cybersource
-const CARD_TYPE_CODES = {
-  '001': 'Visa',
-  '002': 'Mastercard', 
-  '003': 'American Express',
-  '004': 'Discover',
-  '005': 'Diners Club',
-  '006': 'Carte Blanche',
-  '007': 'JCB',
-  '014': 'EnRoute',
-  '021': 'JAL',
-  '024': 'Maestro (UK Domestic)',
-  '031': 'Delta',
-  '033': 'Visa Electron',
-  '034': 'Dankort',
-  '036': 'Cartes Bancaires',
-  '037': 'Carta Si',
-  '039': 'EAN',
-  '040': 'UATP',
-  '042': 'Maestro (International)',
-  '050': 'Hipercard',
-  '051': 'Aura',
-  '054': 'Elo',
-  '062': 'China UnionPay'
-}
+// (removed) CARD_TYPE_CODES was unused in this component
 
 // Countries are now handled by the AddressForm component
 
 export default function MasterCardPaymentForm() {
   // Mastercard Session SDK state
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [merchantId, setMerchantId] = useState<string | null>(null)
   const [isPaymentSessionReady, setIsPaymentSessionReady] = useState(false)
   const [isCardTokenized, setIsCardTokenized] = useState(false)
-  
+
   // Core state variables
   const [isLoading, setIsLoading] = useState(false)
   const [step, setStep] = useState<'form' | 'processing' | '3ds-verification' | 'success' | 'failed'>('form')
   const [transactionId, setTransactionId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [clientIpAddress, setClientIpAddress] = useState<string>('')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  
+
   // Transaction data state
   const [transaction, setTransaction] = useState<Transaction | null>(null)
   const [isLoadingTransaction, setIsLoadingTransaction] = useState(false)
@@ -79,46 +50,20 @@ export default function MasterCardPaymentForm() {
   const [pareq, setPareq] = useState<string | null>(null);
   const initializationStartedRef = useRef(false);
 
-     // Mastercard field refs
-   const cardNumberRef = useRef<HTMLDivElement>(null)
-   const cvvRef = useRef<HTMLDivElement>(null)
-   const expiryMonthRef = useRef<HTMLDivElement>(null)
-   const expiryYearRef = useRef<HTMLDivElement>(null)
-  
-  // Legacy refs (keeping for compatibility)
-  const currentTokenRef = useRef<string | null>(null)
+  // Mastercard field refs
+  const cardNumberRef = useRef<HTMLDivElement>(null)
+  const cvvRef = useRef<HTMLDivElement>(null)
+  const expiryMonthRef = useRef<HTMLDivElement>(null)
+  const expiryYearRef = useRef<HTMLDivElement>(null)
+
+  // Legacy refs removed (unused)
 
   // Prevent hydration mismatch
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // Get client IP address
-  useEffect(() => {
-    const getClientIp = async () => {
-      try {
-        const response = await fetch('https://api.ipify.org?format=json')
-        if (!response.ok) {
-          throw new Error(`IP API returned status: ${response.status}`)
-        }
-        const data = await response.json()
-        setClientIpAddress(data.ip)
-      } catch (error) {
-        // Fallback: Try alternative IP service
-        try {
-          const fallbackResponse = await fetch('https://api64.ipify.org?format=json')
-          const fallbackData = await fallbackResponse.json()
-          setClientIpAddress(fallbackData.ip)
-        } catch (fallbackError) {
-          setClientIpAddress('127.0.0.1') // Use localhost as final fallback
-        }
-      }
-    }
-    
-    if (mounted) {
-      getClientIp()
-    }
-  }, [mounted])
+  // Removed unused client IP logic to satisfy lint
 
   const {
     register,
@@ -150,7 +95,7 @@ export default function MasterCardPaymentForm() {
     }
     const cookies = document.cookie.split(';');
     const authCookie = cookies.find(cookie => cookie.trim().startsWith('access_token'));
-    if (!authCookie) {return null}
+    if (!authCookie) { return null }
     const token = authCookie.split('=')[1].trim();
     return `Bearer ${token}`;
   }
@@ -158,19 +103,19 @@ export default function MasterCardPaymentForm() {
   // Fetch transaction data from query parameter
   useEffect(() => {
     const fetchTransaction = async () => {
-      if (!mounted) {return}
-      
+      if (!mounted) { return }
+
       const transactionId = searchParams.get('transactionId')
       if (!transactionId) {
         setTransactionError('Transaction not found')
         return
       }
-      
+
       setIsLoadingTransaction(true)
       setTransactionError(null)
 
       const authToken = getAuthToken();
-      
+
       try {
         const response = await fetch(buildApiUrl(API_ENDPOINTS.TRANSACTION.GET_USER_TRANSACTION(transactionId)), {
           method: 'GET',
@@ -179,28 +124,28 @@ export default function MasterCardPaymentForm() {
             'Authorization': authToken || '',
           }
         })
-        
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
-        
+
         const data: TransactionResponse = await response.json()
-        
+
         if (data.result !== 'SUCCESS') {
           throw new Error(data.readableErrorMessages?.join(', ') || 'Failed to fetch transaction')
         }
-        
+
         if (!data.transactions || data.transactions.length === 0) {
           throw new Error('Transaction not found')
         }
-        
+
         const transactionData = data.transactions[0]
         setTransaction(transactionData)
-        
+
         // Set form values with transaction data
         setValue('amount', transactionData.totalAmount)
         setValue('currency', transactionData.currency)
-        
+
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Failed to fetch transaction'
         setTransactionError(errorMsg)
@@ -209,14 +154,11 @@ export default function MasterCardPaymentForm() {
         setIsLoadingTransaction(false)
       }
     }
-    
-    // fetchTransaction()
+
+    fetchTransaction()
   }, [mounted, setValue, searchParams])
-  
-  // Helper function to get card type name
-  const getCardTypeName = (cardTypeCode: string) => {
-    return CARD_TYPE_CODES[cardTypeCode as keyof typeof CARD_TYPE_CODES] || 'Unknown'
-  }
+
+  // (removed) getCardTypeName was unused
 
   // Helper function to extract address data from form
   const getAddressData = (data: PaymentFormData) => {
@@ -245,134 +187,81 @@ export default function MasterCardPaymentForm() {
     if (isPaymentSessionReady || initializationStartedRef.current) {
       return
     }
-    
+
     // Only require mounted state and transaction ID from URL
     if (!mounted) {
       return
     }
-    
+
     const transactionId = searchParams.get('transactionId')
     if (!transactionId) {
       return // Don't initialize if no transaction ID in URL
     }
-    
-    initializationStartedRef.current = true
-    
-    const decodeJWT = (token: string) => {
-      try {
-        const payload = token.split('.')[1]
-        const decoded = JSON.parse(atob(payload))
-        return decoded
-      } catch (error) {
-        throw new Error('Failed to decode JWT token')
-      }
-    }
-    
-    const loadCybersourceScript = (scriptUrl: string, integrity: string): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        // Check if script already exists
-        const existingScript = document.querySelector(`script[src="${scriptUrl}"]`)
-        if (existingScript) {
-          if (typeof window.Flex === 'function') {
-            resolve()
-          } else {
-            existingScript.addEventListener('load', () => resolve())
-            existingScript.addEventListener('error', () => reject(new Error('Script failed to load')))
-          }
-          return
-        }
 
-        const script = document.createElement('script')
-        script.src = scriptUrl
-        script.integrity = integrity
-        script.crossOrigin = API_CONFIG.FRONTEND_BASE_URL
-        script.onload = () => {
-          // Wait for FLEX to be available after script loads
-          let attempts = 0
-          const maxAttempts = 100 // 5 seconds max wait
-          
-          const waitForFLEX = () => {
-            if (window.Flex && typeof window.Flex === 'function') {
-              resolve()
-            } else {
-              attempts++
-              if (attempts >= maxAttempts) {
-                reject(new Error('Flex library failed to initialize after script load'))
-                return
-              }
-              setTimeout(waitForFLEX, 50)
-            }
-          }
-          waitForFLEX()
-        }
-        script.onerror = () => {
-          reject(new Error('Failed to load Cybersource script'))
-        }
-        
-        document.head.appendChild(script)
-      })
-    }
-    
+    initializationStartedRef.current = true
+
+    // Removed unused helpers (decodeJWT, loadCybersourceScript)
+
     const configurePaymentSession = (sessionId: string) => {
       if (!sessionId || !window.PaymentSession) {
         throw new Error('PaymentSession not available')
       }
 
-             window.PaymentSession.configure({
-         session: sessionId,
-         fields: {
-           card: {
-             number: "#card-number",
-             securityCode: "#security-code",
-             expiryMonth: "#expiry-month",
-             expiryYear: "#expiry-year"
-           }
-         },
-         frameEmbeddingMitigation: ["javascript"],
-         locale: "en_US", // Set locale for better accessibility
+      window.PaymentSession.configure({
+        session: sessionId,
+        fields: {
+          card: {
+            number: "#card-number",
+            securityCode: "#security-code",
+            expiryMonth: "#expiry-month",
+            expiryYear: "#expiry-year"
+          }
+        },
+        frameEmbeddingMitigation: ["javascript"],
+        locale: "en_US", // Set locale for better accessibility
         callbacks: {
-                     initialized: (response: any) => {
-             if (response.status === "ok") {
-               console.log('✅ PaymentSession initialized successfully')
-             } else {
-               console.error('❌ PaymentSession initialization failed:', response)
-             }
-           },
-                                 formSessionUpdate: (response: any) => {
-              console.log('🔄 Form session update:', response)
-              
-              if (response.status === "ok") {
-                console.log('✅ Session updated successfully - card data tokenized')
-                setIsCardTokenized(true)
-                // Card data has been successfully tokenized
-              } else if (response.status === "fields_in_error") {
-                // Handle field validation errors with better messaging
-                const errorMessages = []
-                
-                if (response.errors?.cardNumber) {
-                  errorMessages.push('Card number is invalid or missing')
-                }
-                if (response.errors?.securityCode) {
-                  errorMessages.push('Security code is invalid')
-                }
-                if (response.errors?.expiryMonth) {
-                  errorMessages.push('Expiry month is required')
-                }
-                if (response.errors?.expiryYear) {
-                  errorMessages.push('Expiry year is required')
-                }
-                
-                if (errorMessages.length > 0) {
-                  toast.error(errorMessages.join(', '))
-                }
-              } else if (response.status === "request_timeout") {
-                toast.error('Request timeout - please try again')
-              } else if (response.status === "system_error") {
-                toast.error('System error - please contact support')
-              } else if (response.status === "session_expired") {
-                toast.error('Payment session expired - please refresh the page')
+          initialized: (response: any) => {
+            if (response.status === "ok") {
+              console.log('✅ PaymentSession initialized successfully')
+            } else {
+              console.error('❌ PaymentSession initialization failed:', response)
+            }
+          },
+          formSessionUpdate: (response: any) => {
+            console.log('🔄 Form session update:', response)
+
+            if (response.status === "ok") {
+              console.log('✅ Session updated successfully - card data tokenized')
+              setIsCardTokenized(true)
+              // Card data has been successfully tokenized
+            } else if (response.status === "fields_in_error") {
+              // Handle field validation errors with better messaging
+              const errorMessages = []
+
+              if (response.errors?.cardNumber) {
+                errorMessages.push('Card number is invalid or missing')
               }
-            },
+              if (response.errors?.securityCode) {
+                errorMessages.push('Security code is invalid')
+              }
+              if (response.errors?.expiryMonth) {
+                errorMessages.push('Expiry month is required')
+              }
+              if (response.errors?.expiryYear) {
+                errorMessages.push('Expiry year is required')
+              }
+
+              if (errorMessages.length > 0) {
+                toast.error(errorMessages.join(', '))
+              }
+            } else if (response.status === "request_timeout") {
+              toast.error('Request timeout - please try again')
+            } else if (response.status === "system_error") {
+              toast.error('System error - please contact support')
+            } else if (response.status === "session_expired") {
+              toast.error('Payment session expired - please refresh the page')
+            }
+          },
           onCardTypeChange: (response: any) => {
             console.log('Card type detected:', response.cardType)
             // You can update UI based on card type here
@@ -383,26 +272,26 @@ export default function MasterCardPaymentForm() {
           onFocus: (response: any) => {
             console.log('Field focused:', response.fieldId)
           },
-                     onBlur: (response: any) => {
-             console.log('Field blurred:', response.fieldId)
-           },
-           onFieldFocus: (response: any) => {
-             console.log('Field focused:', response.fieldId)
-             // Ensure proper focus handling for accessibility
-             if (response.fieldId === 'card.number') {
-               window.PaymentSession.setFocus('card.number')
-             }
-           }
+          onBlur: (response: any) => {
+            console.log('Field blurred:', response.fieldId)
+          },
+          onFieldFocus: (response: any) => {
+            console.log('Field focused:', response.fieldId)
+            // Ensure proper focus handling for accessibility
+            if (response.fieldId === 'card.number') {
+              window.PaymentSession.setFocus('card.number')
+            }
+          }
         },
-                 interaction: {
-           displayControl: {
-             formatCard: "EMBOSSED",
-             invalidFieldCharacters: "ALLOW" // Better for accessibility
-           }
-         }
+        interaction: {
+          displayControl: {
+            formatCard: "EMBOSSED",
+            invalidFieldCharacters: "ALLOW" // Better for accessibility
+          }
+        }
       })
     }
-    
+
     const createMastercardFields = () => {
       // Create card number field
       const cardNumberField = document.createElement('input')
@@ -412,7 +301,7 @@ export default function MasterCardPaymentForm() {
       cardNumberField.setAttribute('aria-label', 'enter your card number')
       cardNumberField.readOnly = true
       cardNumberField.tabIndex = 1
-      
+
       // Create CVV field
       const cvvField = document.createElement('input')
       cvvField.id = 'security-code'
@@ -421,16 +310,16 @@ export default function MasterCardPaymentForm() {
       cvvField.setAttribute('aria-label', 'three digit CVV security code')
       cvvField.readOnly = true
       cvvField.tabIndex = 3
-      
-             // Create expiry month dropdown
-       const expiryMonthField = document.createElement('select')
-       expiryMonthField.id = 'expiry-month'
-       expiryMonthField.className = 'form-input'
-       expiryMonthField.title = 'expiry month'
-       expiryMonthField.setAttribute('aria-label', 'select expiry month')
-       expiryMonthField.setAttribute('readonly', 'true')
-       expiryMonthField.tabIndex = 2
-      
+
+      // Create expiry month dropdown
+      const expiryMonthField = document.createElement('select')
+      expiryMonthField.id = 'expiry-month'
+      expiryMonthField.className = 'form-input'
+      expiryMonthField.title = 'expiry month'
+      expiryMonthField.setAttribute('aria-label', 'select expiry month')
+      expiryMonthField.setAttribute('readonly', 'true')
+      expiryMonthField.tabIndex = 2
+
       // Add month options
       const monthOptions = [
         { value: '', text: 'Select Month' },
@@ -447,27 +336,26 @@ export default function MasterCardPaymentForm() {
         { value: '11', text: 'November' },
         { value: '12', text: 'December' }
       ]
-      
+
       monthOptions.forEach(option => {
         const optionElement = document.createElement('option')
         optionElement.value = option.value
         optionElement.textContent = option.text
         expiryMonthField.appendChild(optionElement)
       })
-      
-             // Create expiry year dropdown
-       const expiryYearField = document.createElement('select')
-       expiryYearField.id = 'expiry-year'
-       expiryYearField.className = 'form-input'
-       expiryYearField.title = 'expiry year'
-       expiryYearField.setAttribute('aria-label', 'select expiry year')
-       expiryYearField.setAttribute('readonly', 'true')
-       expiryYearField.tabIndex = 4
-      
+
+      // Create expiry year dropdown
+      const expiryYearField = document.createElement('select')
+      expiryYearField.id = 'expiry-year'
+      expiryYearField.className = 'form-input'
+      expiryYearField.title = 'expiry year'
+      expiryYearField.setAttribute('aria-label', 'select expiry year')
+      expiryYearField.setAttribute('readonly', 'true')
+      expiryYearField.tabIndex = 4
+
       // Add year options (current year + 20 years)
       const currentYear = new Date().getFullYear()
-      const yearOptions = [{ value: '', text: 'Select Year' }]
-      
+
       for (let i = 0; i < 20; i++) {
         const year = currentYear + i
         const optionElement = document.createElement('option')
@@ -475,7 +363,7 @@ export default function MasterCardPaymentForm() {
         optionElement.textContent = year.toString()
         expiryYearField.appendChild(optionElement)
       }
-      
+
       // Load fields into containers
       if (cardNumberRef.current) {
         cardNumberRef.current.appendChild(cardNumberField)
@@ -490,11 +378,11 @@ export default function MasterCardPaymentForm() {
         expiryYearRef.current.appendChild(expiryYearField)
       }
     }
-    
-    
-    
-    
-    
+
+
+
+
+
     const loadMastercardScript = (merchantId: string): Promise<void> => {
       return new Promise((resolve, reject) => {
         const existingScript = document.querySelector(`script[src*="test-gateway.mastercard.com"]`)
@@ -508,12 +396,12 @@ export default function MasterCardPaymentForm() {
           return
         }
 
-                 const script = document.createElement('script')
-         script.src = `https://test-gateway.mastercard.com/form/version/100/merchant/${merchantId}/session.js`
+        const script = document.createElement('script')
+        script.src = `https://test-gateway.mastercard.com/form/version/100/merchant/${merchantId}/session.js`
         script.onload = () => {
           let attempts = 0
           const maxAttempts = 100
-          
+
           const waitForPaymentSession = () => {
             if (window.PaymentSession && typeof window.PaymentSession.configure === 'function') {
               resolve()
@@ -531,22 +419,22 @@ export default function MasterCardPaymentForm() {
         script.onerror = () => {
           reject(new Error('Failed to load Mastercard script'))
         }
-        
+
         document.head.appendChild(script)
       })
     }
-    
+
     const initializeMastercardSession = async () => {
       try {
         console.log('🔄 Initializing Mastercard provider...')
-        
+
         // Get session from backend
         const transactionId = searchParams.get('transactionId')
-        
+
         if (!transactionId) {
           throw new Error('No transaction ID provided in URL')
         }
-        
+
         // const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.CHECKOUT_TOKEN), {
         //   method: 'POST',
         //   headers: { 'Content-Type': 'application/json' },
@@ -555,47 +443,47 @@ export default function MasterCardPaymentForm() {
         //     'provider': 'mastercard'
         //   })
         // })
-        
+
         // const data = await response.json()
-        
+
         // if (data.result !== 'SUCCESS') {
         //   throw new Error(`Backend API returned error: ${data.result}. Errors: ${data.readableErrorMessages?.join(', ') || 'Unknown error'}`)
         // }
-        
+
         // if (!data.sessionId || !data.merchantId) {
         //   throw new Error('No session ID or merchant ID received from backend API')
         // }
-        
+
         console.log('✅ Session and merchant ID received')
-        
+
         // Store session data
         setSessionId("SESSION0002374325869H8155308I45")
-        setMerchantId("010100100111")
-        
+        // Merchant ID kept local where needed
+
         // Load Mastercard script
         await loadMastercardScript("010100100111")
-        
-                 // Create field elements
-         createMastercardFields()
-         
-         // Verify fields were created
-         console.log('🔍 Checking field creation:', {
-           cardNumber: !!document.getElementById('card-number'),
-           securityCode: !!document.getElementById('security-code'),
-           expiryMonth: !!document.getElementById('expiry-month'),
-           expiryYear: !!document.getElementById('expiry-year')
-         })
-         
-         // Configure PaymentSession
-         configurePaymentSession("SESSION0002374325869H8155308I45")
-         
-         // Don't apply styling here - wait for PaymentSession to be fully initialized
-         // The styling will be applied in the 'initialized' callback
-         
-         setIsPaymentSessionReady(true)
-        
+
+        // Create field elements
+        createMastercardFields()
+
+        // Verify fields were created
+        console.log('🔍 Checking field creation:', {
+          cardNumber: !!document.getElementById('card-number'),
+          securityCode: !!document.getElementById('security-code'),
+          expiryMonth: !!document.getElementById('expiry-month'),
+          expiryYear: !!document.getElementById('expiry-year')
+        })
+
+        // Configure PaymentSession
+        configurePaymentSession("SESSION0002374325869H8155308I45")
+
+        // Don't apply styling here - wait for PaymentSession to be fully initialized
+        // The styling will be applied in the 'initialized' callback
+
+        setIsPaymentSessionReady(true)
+
         console.log('✅ Mastercard Session SDK initialized successfully')
-        
+
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         console.error('❌ Failed to initialize Mastercard:', error)
@@ -606,7 +494,7 @@ export default function MasterCardPaymentForm() {
     initializeMastercardSession()
   }, [mounted, searchParams]) // Run when mounted or search params change
 
- 
+
 
   // 3D Secure Authentication Functions
 
@@ -651,28 +539,28 @@ export default function MasterCardPaymentForm() {
           sessionId: md // Include the session ID from Cybersource
         })
       })
-      .then(response => response.json())
-      .then(data => {
-        if (data.result === 'SUCCESS') {
-          setStep('success')
-          setTransactionId(data.paymentResponse?.id || transactionId)
-          toast.success('Payment successful!')
-          localStorage.removeItem('challengeData') // Clear stored data
-        } else {
-          throw new Error(data.error || 'Payment completion failed')
-        }
-      })
-      .catch(error => {
-        toast.error(error instanceof Error ? error.message : 'Payment failed')
-        setStep('form')
-      })
-      .finally(() => {
-        // Reset challenge-related states
-        setChallengeStepUpUrl(null)
-        setChallengeAccessToken(null)
-        setPareq(null)
-        setShowChallenge(false)
-      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.result === 'SUCCESS') {
+            setStep('success')
+            setTransactionId(data.paymentResponse?.id || transactionId)
+            toast.success('Payment successful!')
+            localStorage.removeItem('challengeData') // Clear stored data
+          } else {
+            throw new Error(data.error || 'Payment completion failed')
+          }
+        })
+        .catch(error => {
+          toast.error(error instanceof Error ? error.message : 'Payment failed')
+          setStep('form')
+        })
+        .finally(() => {
+          // Reset challenge-related states
+          setChallengeStepUpUrl(null)
+          setChallengeAccessToken(null)
+          setPareq(null)
+          setShowChallenge(false)
+        })
     } else if (status === 'error') {
       setStep('form')
       toast.error(`Payment failed: ${message}`)
@@ -704,7 +592,7 @@ export default function MasterCardPaymentForm() {
 
     try {
       console.log('🔄 Processing payment with Mastercard Session SDK...')
-      
+
       // Step 1: Tokenize card data using PaymentSession
       if (!window.PaymentSession) {
         throw new Error('PaymentSession not available')
@@ -712,10 +600,10 @@ export default function MasterCardPaymentForm() {
 
       // Update session with form data to trigger tokenization
       window.PaymentSession.updateSessionFromForm('card')
-      
+
       // Wait a moment for tokenization to complete
       await new Promise(resolve => setTimeout(resolve, 500))
-      
+
       // Step 2: Process payment with tokenized session ID
       const paymentRequest = {
         sessionId: sessionId, // Use Mastercard session ID (contains tokenized card data)
@@ -744,14 +632,14 @@ export default function MasterCardPaymentForm() {
 
       if (responseData.result === 'SUCCESS') {
         const paymentResponse = responseData.paymentResponse;
-        
+
         if (paymentResponse.status === 'PENDING_AUTHENTICATION') {
           // Handle 3DS challenge
           const stepUpUrl = paymentResponse.consumerAuthenticationInformation?.stepUpUrl;
           const pareqValue = paymentResponse.consumerAuthenticationInformation?.pareq;
           const accessToken = paymentResponse.consumerAuthenticationInformation?.accessToken;
           const authTransactionId = paymentResponse.consumerAuthenticationInformation?.authenticationTransactionId;
-          
+
           if (stepUpUrl && pareqValue && accessToken) {
             // Store payment data in localStorage for the challenge completion
             const challengeData = {
@@ -769,7 +657,7 @@ export default function MasterCardPaymentForm() {
               ...getAddressData(data)
             };
             localStorage.setItem('challengeData', JSON.stringify(challengeData));
-            
+
             setStep('3ds-verification');
             setChallengeStepUpUrl(stepUpUrl)
             setChallengeAccessToken(accessToken)
@@ -789,20 +677,20 @@ export default function MasterCardPaymentForm() {
         throw new Error(errorMsg);
       }
 
-         } catch (error) {
-       const errorMsg = error instanceof Error ? error.message : 'Payment failed';
-       setErrorMessage(errorMsg);
-       setStep('failed');
-       setIsCardTokenized(false); // Reset tokenization status on error
-       toast.error(errorMsg);
-     } finally {
-       setIsLoading(false)
-     }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Payment failed';
+      setErrorMessage(errorMsg);
+      setStep('failed');
+      setIsCardTokenized(false); // Reset tokenization status on error
+      toast.error(errorMsg);
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleChallengeComplete = async (transactionId: string, md?: string) => {
     try {
-      
+
       // Get stored payment data from localStorage
       const storedChallengeData = localStorage.getItem('challengeData');
       if (!storedChallengeData) {
@@ -832,7 +720,7 @@ export default function MasterCardPaymentForm() {
         setStep('success');
         setTransactionId(responseData.paymentResponse?.id || transactionId);
         toast.success('Payment successful!');
-        
+
         // Clear stored payment data
         localStorage.removeItem('challengeData');
       } else {
@@ -888,28 +776,28 @@ export default function MasterCardPaymentForm() {
         </>
       )
     }
-         if (!isPaymentSessionReady) {
-       return (
-         <>
-           <Loader2 className="h-5 w-5 animate-spin" />
-           <span>Initializing Payment Form...</span>
-         </>
-       )
-     }
-     if (!isCardTokenized) {
-       return (
-         <>
-           <Loader2 className="h-5 w-5 animate-spin" />
-           <span>Validating Card...</span>
-         </>
-       )
-     }
-     return (
-       <>
-         <Lock className="h-5 w-5" />
-         <span>Pay Securely</span>
-       </>
-     )
+    if (!isPaymentSessionReady) {
+      return (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Initializing Payment Form...</span>
+        </>
+      )
+    }
+    if (!isCardTokenized) {
+      return (
+        <>
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Validating Card...</span>
+        </>
+      )
+    }
+    return (
+      <>
+        <Lock className="h-5 w-5" />
+        <span>Pay Securely</span>
+      </>
+    )
   }
 
   if (step === 'success') {
@@ -1020,7 +908,7 @@ export default function MasterCardPaymentForm() {
             <ChallengeIframe
               stepUpUrl={challengeStepUpUrl}
               accessToken={challengeAccessToken || ''}
-                            pareq={pareq}
+              pareq={pareq}
               onChallengeComplete={handleChallengeComplete}
             />
           </div>
@@ -1032,253 +920,253 @@ export default function MasterCardPaymentForm() {
   return (
     <>
       <form onSubmit={handleSubmit(onSubmit)} className="card p-8">
-             <div className="flex items-center justify-center mb-6">
-         <div className="flex items-center space-x-2">
-           <Lock className="h-5 w-5 text-green-600" />
-           <span className="text-sm text-gray-600">Secured by Mastercard</span>
-           {transaction && (
-             <span className="text-xs text-gray-400 ml-4">
-               ID: {transaction.transactionId}
-             </span>
-           )}
-         </div>
-       </div>
-
-      {/* Transaction Loading State */}
-      {isLoadingTransaction && (
-        <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-4">
-              <Loader2 className="h-8 w-8 text-blue-600 animate-spin mr-3" />
-              <h3 className="text-lg font-semibold text-blue-900">Loading Transaction</h3>
-            </div>
-            <p className="text-blue-700">Please wait while we fetch your transaction details...</p>
-          </div>
-        </div>
-      )}
-
-      {transactionError && (
-        <div className="mb-8 p-6 bg-gradient-to-r from-red-50 to-pink-50 rounded-lg border border-red-200">
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-4">
-              <AlertCircle className="h-8 w-8 text-red-600 mr-3" />
-              <h3 className="text-lg font-semibold text-red-900">Transaction Error</h3>
-            </div>
-            <p className="text-red-700">{transactionError}</p>
-          </div>
-        </div>
-      )}
-
-      {transaction && !isLoadingTransaction && (
-        <div className="mb-8 p-4 bg-green-50 rounded-lg">
-          <div className="text-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Transaction Details</h3>
-            <div className="text-3xl font-bold text-green-600">
-              {transaction.currency} {transaction.totalAmount.toFixed(2)}
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-gray-600">Transaction ID</p>
-              <p className="font-mono font-medium">{transaction.transactionId}</p>
-            </div>
-            <div>
-              <p className="text-gray-600">Receiver</p>
-              <p className="font-medium">{transaction.receiverFullName}</p>
-            </div>
-            <div>
-              <p className="text-gray-600">Bank</p>
-              <p className="font-medium">{transaction.bankName}</p>
-            </div>
-            <div>
-              <p className="text-gray-600">Status</p>
-              <p className="font-medium">{transaction.paymentStatus}</p>
-            </div>
-          </div>
-          
-          {/* Hidden form fields for amount and currency */}
-          <input type="hidden" {...register('amount', { required: false })} />
-          <input type="hidden" {...register('currency', { required: false })} />
-        </div>
-      )}
-
-      {/* Personal Information */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <CreditCard className="h-5 w-5 mr-2" />
-          Personal Information
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label htmlFor="firstName" className="form-label">
-              First Name *
-            </label>
-            <input
-              id="firstName"
-              type="text"
-              className="form-input"
-              placeholder="John"
-              {...register('firstName', {
-                required: 'First name is required',
-                minLength: { value: 2, message: 'Minimum 2 characters' }
-              })}
-            />
-            {errors.firstName && (
-              <p className="form-error">{errors.firstName.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="lastName" className="form-label">
-              Last Name *
-            </label>
-            <input
-              id="lastName"
-              type="text"
-              className="form-input"
-              placeholder="Doe"
-              {...register('lastName', {
-                required: 'Last name is required',
-                minLength: { value: 2, message: 'Minimum 2 characters' }
-              })}
-            />
-            {errors.lastName && (
-              <p className="form-error">{errors.lastName.message}</p>
+        <div className="flex items-center justify-center mb-6">
+          <div className="flex items-center space-x-2">
+            <Lock className="h-5 w-5 text-green-600" />
+            <span className="text-sm text-gray-600">Secured by Mastercard</span>
+            {transaction && (
+              <span className="text-xs text-gray-400 ml-4">
+                ID: {transaction.transactionId}
+              </span>
             )}
           </div>
         </div>
 
-        <div className="mb-4">
-          <label htmlFor="email" className="form-label">
-            Email Address *
-          </label>
-          <input
-            id="email"
-            type="email"
-            className="form-input"
-            placeholder="john.doe@example.com"
-            {...register('email', {
-              required: 'Email is required',
-              pattern: {
-                value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                message: 'Invalid email address'
-              }
-            })}
-          />
-          {errors.email && (
-            <p className="form-error">{errors.email.message}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Card Information */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Lock className="h-5 w-5 mr-2" />
-          Card Information
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="form-label">
-              Card Number * 💳
-            </label>
-            <div
-              ref={cardNumberRef}
-              className="form-input bg-white"
-              style={{ minHeight: '48px' }}
-            />
-            {mounted && !isPaymentSessionReady && (
-              <div className="flex items-center mt-2 text-sm text-gray-500">
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Loading secure card input...
+        {/* Transaction Loading State */}
+        {isLoadingTransaction && (
+          <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+            <div className="text-center">
+              <div className="flex items-center justify-center mb-4">
+                <Loader2 className="h-8 w-8 text-blue-600 animate-spin mr-3" />
+                <h3 className="text-lg font-semibold text-blue-900">Loading Transaction</h3>
               </div>
+              <p className="text-blue-700">Please wait while we fetch your transaction details...</p>
+            </div>
+          </div>
+        )}
+
+        {transactionError && (
+          <div className="mb-8 p-6 bg-gradient-to-r from-red-50 to-pink-50 rounded-lg border border-red-200">
+            <div className="text-center">
+              <div className="flex items-center justify-center mb-4">
+                <AlertCircle className="h-8 w-8 text-red-600 mr-3" />
+                <h3 className="text-lg font-semibold text-red-900">Transaction Error</h3>
+              </div>
+              <p className="text-red-700">{transactionError}</p>
+            </div>
+          </div>
+        )}
+
+        {transaction && !isLoadingTransaction && (
+          <div className="mb-8 p-4 bg-green-50 rounded-lg">
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Transaction Details</h3>
+              <div className="text-3xl font-bold text-green-600">
+                {transaction.currency} {transaction.totalAmount.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-gray-600">Transaction ID</p>
+                <p className="font-mono font-medium">{transaction.transactionId}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Receiver</p>
+                <p className="font-medium">{transaction.receiverFullName}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Bank</p>
+                <p className="font-medium">{transaction.bankName}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Status</p>
+                <p className="font-medium">{transaction.paymentStatus}</p>
+              </div>
+            </div>
+
+            {/* Hidden form fields for amount and currency */}
+            <input type="hidden" {...register('amount', { required: false })} />
+            <input type="hidden" {...register('currency', { required: false })} />
+          </div>
+        )}
+
+        {/* Personal Information */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <CreditCard className="h-5 w-5 mr-2" />
+            Personal Information
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label htmlFor="firstName" className="form-label">
+                First Name *
+              </label>
+              <input
+                id="firstName"
+                type="text"
+                className="form-input"
+                placeholder="John"
+                {...register('firstName', {
+                  required: 'First name is required',
+                  minLength: { value: 2, message: 'Minimum 2 characters' }
+                })}
+              />
+              {errors.firstName && (
+                <p className="form-error">{errors.firstName.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="lastName" className="form-label">
+                Last Name *
+              </label>
+              <input
+                id="lastName"
+                type="text"
+                className="form-input"
+                placeholder="Doe"
+                {...register('lastName', {
+                  required: 'Last name is required',
+                  minLength: { value: 2, message: 'Minimum 2 characters' }
+                })}
+              />
+              {errors.lastName && (
+                <p className="form-error">{errors.lastName.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label htmlFor="email" className="form-label">
+              Email Address *
+            </label>
+            <input
+              id="email"
+              type="email"
+              className="form-input"
+              placeholder="john.doe@example.com"
+              {...register('email', {
+                required: 'Email is required',
+                pattern: {
+                  value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                  message: 'Invalid email address'
+                }
+              })}
+            />
+            {errors.email && (
+              <p className="form-error">{errors.email.message}</p>
             )}
           </div>
+        </div>
 
-          <div>
-            <label className="form-label">
-              Security Code *
-            </label>
-            <div
-              ref={cvvRef}
-              className="form-input bg-white"
-              style={{ minHeight: '48px' }}
+        {/* Card Information */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <Lock className="h-5 w-5 mr-2" />
+            Card Information
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="form-label">
+                Card Number * 💳
+              </label>
+              <div
+                ref={cardNumberRef}
+                className="form-input bg-white"
+                style={{ minHeight: '48px' }}
+              />
+              {mounted && !isPaymentSessionReady && (
+                <div className="flex items-center mt-2 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading secure card input...
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="form-label">
+                Security Code *
+              </label>
+              <div
+                ref={cvvRef}
+                className="form-input bg-white"
+                style={{ minHeight: '48px' }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="form-label">
+                Expiration Month *
+              </label>
+              <div
+                ref={expiryMonthRef}
+                className="form-input bg-white"
+                style={{ minHeight: '48px' }}
+              />
+            </div>
+
+            <div>
+              <label className="form-label">
+                Expiration Year *
+              </label>
+              <div
+                ref={expiryYearRef}
+                className="form-input bg-white"
+                style={{ minHeight: '48px' }}
+              />
+            </div>
+          </div>
+
+
+        </div>
+
+        {/* Billing Address */}
+        <AddressForm
+          name="billing"
+          required={true}
+          control={control}
+          watch={watch}
+          setValue={setValue}
+          errors={errors}
+        />
+
+        {/* Save Card Option */}
+        <div className="mt-4 mb-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="form-checkbox h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              {...register('saveCard')}
+              defaultChecked={false}
             />
+            <div>
+              <span className="text-sm font-medium text-gray-700">
+                Save this card for future payments
+              </span>
+              <p className="text-xs text-gray-500 mt-1">
+                Your card information will be securely stored for faster checkout next time
+              </p>
+            </div>
+          </label>
+        </div>
+
+        {/* Security Notice */}
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start">
+            <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="text-sm text-blue-800">
+              <p className="font-medium mb-1">Your payment is secure</p>
+              <p>Your card information is encrypted and processed securely through Mastercard&apos;s hosted payment fields. We never store your card details.</p>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="form-label">
-              Expiration Month *
-            </label>
-            <div
-              ref={expiryMonthRef}
-              className="form-input bg-white"
-              style={{ minHeight: '48px' }}
-            />
-          </div>
-
-          <div>
-            <label className="form-label">
-              Expiration Year *
-            </label>
-            <div
-              ref={expiryYearRef}
-              className="form-input bg-white"
-              style={{ minHeight: '48px' }}
-            />
-          </div>
-        </div>
-
-        
-      </div>
-
-      {/* Billing Address */}
-      <AddressForm 
-        name="billing" 
-        required={true}
-        control={control}
-        watch={watch}
-        setValue={setValue}
-        errors={errors}
-      />
-
-      {/* Save Card Option */}
-      <div className="mt-4 mb-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <label className="flex items-center space-x-3 cursor-pointer">
-          <input
-            type="checkbox"
-            className="form-checkbox h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            {...register('saveCard')}
-            defaultChecked={false}
-          />
-          <div>
-            <span className="text-sm font-medium text-gray-700">
-              Save this card for future payments
-            </span>
-            <p className="text-xs text-gray-500 mt-1">
-              Your card information will be securely stored for faster checkout next time
-            </p>
-          </div>
-        </label>
-      </div>
-
-      {/* Security Notice */}
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-start">
-          <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
-                     <div className="text-sm text-blue-800">
-             <p className="font-medium mb-1">Your payment is secure</p>
-             <p>Your card information is encrypted and processed securely through Mastercard's hosted payment fields. We never store your card details.</p>
-           </div>
-        </div>
-      </div>
-
-                    {/* Mastercard Session Status */}
+        {/* Mastercard Session Status */}
         {mounted && !isPaymentSessionReady && (
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-start">
@@ -1304,27 +1192,27 @@ export default function MasterCardPaymentForm() {
           </div>
         )}
 
-      {/* Submit Button */}
-             <button
-         type="submit"
-         disabled={
-           isLoading || 
-           !isPaymentSessionReady || 
-           !isCardTokenized ||
-           isLoadingTransaction ||
-           !transaction ||
-           !!transactionError
-         }
-         className="btn-primary w-full flex items-center justify-center space-x-2"
-       >
-        {getButtonContent()}
-      </button>
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={
+            isLoading ||
+            !isPaymentSessionReady ||
+            !isCardTokenized ||
+            isLoadingTransaction ||
+            !transaction ||
+            !!transactionError
+          }
+          className="btn-primary w-full flex items-center justify-center space-x-2"
+        >
+          {getButtonContent()}
+        </button>
 
-      {mounted && !isPaymentSessionReady && (
-        <p className="text-center text-sm text-gray-500 mt-4">
-          {isLoadingTransaction ? 'Loading transaction...' : 'Initializing Mastercard payment form...'}
-        </p>
-      )}
+        {mounted && !isPaymentSessionReady && (
+          <p className="text-center text-sm text-gray-500 mt-4">
+            {isLoadingTransaction ? 'Loading transaction...' : 'Initializing Mastercard payment form...'}
+          </p>
+        )}
       </form>
 
       {/* {paymentResult && (
