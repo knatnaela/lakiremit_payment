@@ -100,6 +100,22 @@ export default function MasterCardPaymentForm() {
     return `Bearer ${token}`;
   }
 
+  // Prefill names and fixed billing defaults from URL
+  useEffect(() => {
+    const fn = searchParams.get('firstName') || ''
+    const ln = searchParams.get('lastName') || ''
+    if (fn) { setValue('firstName', fn) }
+    if (ln) { setValue('lastName', ln) }
+    setValue('billing', {
+      address: '1295 Charleston rd',
+      city: 'CA',
+      state: '',
+      postalCode: '94043',
+      country: 'US',
+      address2: 'Mountain View'
+    })
+  }, [searchParams, setValue])
+
   // Fetch transaction data from query parameter
   useEffect(() => {
     const fetchTransaction = async () => {
@@ -166,6 +182,7 @@ export default function MasterCardPaymentForm() {
     if (data.billing) {
       return {
         billToAddress1: data.billing.address,
+        billToAddress2: data.billing.address2,
         billToCity: data.billing.city,
         billToState: data.billing.state,
         billToPostalCode: data.billing.postalCode,
@@ -174,6 +191,7 @@ export default function MasterCardPaymentForm() {
     }
     return {
       billToAddress1: data.address,
+      billToAddress2: data.address2,
       billToCity: data.city,
       billToState: data.state,
       billToPostalCode: data.postalCode,
@@ -1125,35 +1143,9 @@ export default function MasterCardPaymentForm() {
 
         </div>
 
-        {/* Billing Address */}
-        <AddressForm
-          name="billing"
-          required={true}
-          control={control}
-          watch={watch}
-          setValue={setValue}
-          errors={errors}
-        />
+        {/* Billing Address hidden (prefilled with fixed values) */}
 
-        {/* Save Card Option */}
-        <div className="mt-4 mb-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="form-checkbox h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              {...register('saveCard')}
-              defaultChecked={false}
-            />
-            <div>
-              <span className="text-sm font-medium text-gray-700">
-                Save this card for future payments
-              </span>
-              <p className="text-xs text-gray-500 mt-1">
-                Your card information will be securely stored for faster checkout next time
-              </p>
-            </div>
-          </label>
-        </div>
+        {/* Save Card Option hidden for now */}
 
         {/* Security Notice */}
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">

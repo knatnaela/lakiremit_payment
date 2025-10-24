@@ -4,9 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import { CreditCard, Lock, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
-import { 
-  PaymentFormData, 
-  MicroformInstance, 
+import {
+  PaymentFormData,
+  MicroformInstance,
   FlexTokenPayload,
   Transaction,
   TransactionResponse
@@ -22,7 +22,7 @@ import { API_CONFIG, API_ENDPOINTS, buildApiUrl, CHALLENGE_URLS } from '@/consta
 // Card type mapping for Cybersource
 const CARD_TYPE_CODES = {
   '001': 'Visa',
-  '002': 'Mastercard', 
+  '002': 'Mastercard',
   '003': 'American Express',
   '004': 'Discover',
   '005': 'Diners Club',
@@ -62,12 +62,12 @@ export default function PaymentForm() {
   const [clientIpAddress, setClientIpAddress] = useState<string>('')
   const [checkoutToken, setCheckoutToken] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  
+
   // Transaction data state
   const [transaction, setTransaction] = useState<Transaction | null>(null)
   const [isLoadingTransaction, setIsLoadingTransaction] = useState(false)
   const [transactionError, setTransactionError] = useState<string | null>(null)
-  
+
   // 3D Secure Authentication States
   const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [accessToken, setAccessToken] = useState<string | null>(null)
@@ -115,7 +115,7 @@ export default function PaymentForm() {
         }
       }
     }
-    
+
     if (mounted) {
       getClientIp()
     }
@@ -148,27 +148,41 @@ export default function PaymentForm() {
   const getAuthToken = () => {
     const cookies = document.cookie.split(';');
     const authCookie = cookies.find(cookie => cookie.trim().startsWith('access_token'));
-    if (!authCookie) {return null}
+    if (!authCookie) { return null }
     const token = authCookie.split('=')[1].trim();
     return `Bearer ${token}`;
   }
 
   // Fetch transaction data from query parameter
   useEffect(() => {
+    // Prefill names and fixed billing defaults from URL and spec
+    const fn = searchParams.get('firstName') || ''
+    const ln = searchParams.get('lastName') || ''
+    if (fn) { setValue('firstName', fn) }
+    if (ln) { setValue('lastName', ln) }
+    setValue('billing', {
+      address: '1295 Charleston rd',
+      city: 'CA',
+      state: '',
+      postalCode: '94043',
+      country: 'US',
+      address2: 'Mountain View'
+    })
+
     const fetchTransaction = async () => {
-      if (!mounted) {return}
-      
+      if (!mounted) { return }
+
       const transactionId = searchParams.get('transactionId')
       if (!transactionId) {
         setTransactionError('Transaction not found')
         return
       }
-      
+
       setIsLoadingTransaction(true)
       setTransactionError(null)
 
       const authToken = getAuthToken();
-      
+
       try {
         const response = await fetch(buildApiUrl(API_ENDPOINTS.TRANSACTION.GET_USER_TRANSACTION(transactionId)), {
           method: 'GET',
@@ -177,28 +191,28 @@ export default function PaymentForm() {
             'Authorization': authToken || '',
           }
         })
-        
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
-        
+
         const data: TransactionResponse = await response.json()
-        
+
         if (data.result !== 'SUCCESS') {
           throw new Error(data.readableErrorMessages?.join(', ') || 'Failed to fetch transaction')
         }
-        
+
         if (!data.transactions || data.transactions.length === 0) {
           throw new Error('Transaction not found')
         }
-        
+
         const transactionData = data.transactions[0]
         setTransaction(transactionData)
-        
+
         // Set form values with transaction data
         setValue('amount', transactionData.totalAmount)
         setValue('currency', transactionData.currency)
-        
+
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Failed to fetch transaction'
         setTransactionError(errorMsg)
@@ -207,10 +221,10 @@ export default function PaymentForm() {
         setIsLoadingTransaction(false)
       }
     }
-    
+
     fetchTransaction()
   }, [mounted, setValue, searchParams])
-  
+
   // Helper function to get card type name
   const getCardTypeName = (cardTypeCode: string) => {
     return CARD_TYPE_CODES[cardTypeCode as keyof typeof CARD_TYPE_CODES] || 'Unknown'
@@ -222,6 +236,7 @@ export default function PaymentForm() {
     if (data.billing) {
       return {
         billToAddress1: data.billing.address,
+        billToAddress2: data.billing.address2,
         billToCity: data.billing.city,
         billToState: data.billing.state,
         billToPostalCode: data.billing.postalCode,
@@ -230,6 +245,7 @@ export default function PaymentForm() {
     }
     return {
       billToAddress1: data.address,
+      billToAddress2: data.address2,
       billToCity: data.city,
       billToState: data.state,
       billToPostalCode: data.postalCode,
@@ -243,19 +259,19 @@ export default function PaymentForm() {
     if (isInitialized || checkoutToken || initializationStartedRef.current) {
       return
     }
-    
+
     // Only require mounted state and transaction ID from URL
     if (!mounted) {
       return
     }
-    
+
     const transactionId = searchParams.get('transactionId')
     if (!transactionId) {
       return // Don't initialize if no transaction ID in URL
     }
-    
+
     initializationStartedRef.current = true
-    
+
     const decodeJWT = (token: string) => {
       try {
         const payload = token.split('.')[1]
@@ -265,7 +281,7 @@ export default function PaymentForm() {
         throw new Error('Failed to decode JWT token')
       }
     }
-    
+
     const loadCybersourceScript = (scriptUrl: string, integrity: string): Promise<void> => {
       return new Promise((resolve, reject) => {
         // Check if script already exists
@@ -288,7 +304,7 @@ export default function PaymentForm() {
           // Wait for FLEX to be available after script loads
           let attempts = 0
           const maxAttempts = 100 // 5 seconds max wait
-          
+
           const waitForFLEX = () => {
             if (window.Flex && typeof window.Flex === 'function') {
               resolve()
@@ -306,61 +322,61 @@ export default function PaymentForm() {
         script.onerror = () => {
           reject(new Error('Failed to load Cybersource script'))
         }
-        
+
         document.head.appendChild(script)
       })
     }
-    
+
     const initializeMicroform = async () => {
       try {
         // Get microform token from backend
         const transactionId = searchParams.get('transactionId')
-        
+
         if (!transactionId) {
           throw new Error('No transaction ID provided in URL')
         }
-        
+
         const response = await fetch(buildApiUrl(API_ENDPOINTS.PAYMENT.CHECKOUT_TOKEN), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-           'transactionId': transactionId
+            'transactionId': transactionId
           })
         })
-        
+
         const data = await response.json()
-        
+
         if (data.result !== 'SUCCESS') {
           throw new Error(`Backend API returned error: ${data.result}. Errors: ${data.readableErrorMessages?.join(', ') || 'Unknown error'}`)
         }
-        
+
         if (!data.token) {
           throw new Error('No token received from backend API')
         }
-        
+
         // Store the checkout token for later use
         setCheckoutToken(data.token)
-        
+
         // Decode JWT to get script URL and integrity
         const decodedJWT = decodeJWT(data.token)
         const clientLibrary = decodedJWT.ctx?.[0]?.data?.clientLibrary
         const clientLibraryIntegrity = decodedJWT.ctx?.[0]?.data?.clientLibraryIntegrity
-        
+
         if (!clientLibrary || !clientLibraryIntegrity) {
           throw new Error('Missing clientLibrary or clientLibraryIntegrity in JWT')
         }
-        
+
         // Load the correct script with integrity check
         await loadCybersourceScript(clientLibrary, clientLibraryIntegrity)
-        
+
         // Initialize Flex SDK with the capture context (JWT token)
         if (!window.Flex) {
           throw new Error('Cybersource Flex library is not available')
         }
         const flex = new window.Flex(data.token)
-        
+
         // Create microform with basic styling
-        const microform = flex.microform({ 
+        const microform = flex.microform({
           styles: {
             'input': {
               'font-size': '16px',
@@ -374,20 +390,20 @@ export default function PaymentForm() {
         const numberField = microform.createField('number', {
           placeholder: 'Card Number'
         })
-        
+
         const securityCodeField = microform.createField('securityCode', {
           placeholder: 'CVV'
         })
-        
+
         // Load fields into containers
         if (cardNumberRef.current) {
           numberField.load(cardNumberRef.current)
-          
+
           // Add field validation listeners
           numberField.on('change', () => {
             // Handle card number validation silently
           })
-          
+
           numberField.on('error', () => {
             toast.error('Card number field error')
           })
@@ -395,31 +411,31 @@ export default function PaymentForm() {
 
         if (cvvRef.current) {
           securityCodeField.load(cvvRef.current)
-          
+
           // Add field validation listeners
           securityCodeField.on('change', () => {
             // Handle security code validation silently
           })
-          
+
           securityCodeField.on('error', () => {
             toast.error('Security code field error')
           })
         }
-        
+
         // Note: Cardinal Commerce listener is set up in a separate useEffect to avoid conflicts
 
         // Note: Cardinal Commerce form will be submitted after authentication setup
         // when accessToken and ddcUrl are available (like visa-aft)
 
         setIsInitialized(true)
-        
+
       } catch (error) {
         toast.error(`Failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
 
     initializeMicroform()
-    
+
     // Cleanup function to stop the listener when component unmounts
     return () => {
       const cardinalListener = CardinalCommerceListener.getInstance();
@@ -434,10 +450,10 @@ export default function PaymentForm() {
       if (!transaction) {
         throw new Error('Transaction data not available')
       }
-      
+
       // Collect comprehensive device information with the real session ID
       const deviceInfo = collectDeviceInformation(sessionId)
-      
+
       // Create payment request with all collected data
       const paymentRequest = {
         transientToken: currentTokenRef.current || paymentToken,
@@ -446,7 +462,7 @@ export default function PaymentForm() {
         currency: transaction.currency,
         totalAmount: transaction.totalAmount.toString(),
         returnUrl: CHALLENGE_URLS.RESULT_CALLBACK,
-        merchantReference:  transaction.transactionId,
+        merchantReference: transaction.transactionId,
         ecommerceIndicatorAuth: 'internet',
         // Personal information
         firstName: data.firstName,
@@ -482,7 +498,7 @@ export default function PaymentForm() {
           const authTransactionId = paymentData.consumerAuthenticationInformation?.authenticationTransactionId;
           const clientRefInfo = paymentData.clientReferenceInformation;
           const merchantRef = clientRefInfo?.code || 'order-' + Date.now();
-          
+
           const pareqValue = paymentData.consumerAuthenticationInformation?.pareq;
           const accessToken = paymentData.consumerAuthenticationInformation?.accessToken;
 
@@ -510,9 +526,9 @@ export default function PaymentForm() {
             ...getAddressData(data)
           };
           localStorage.setItem('challengeData', JSON.stringify(challengeData));
-          
+
           if (stepUpUrl && pareqValue && accessToken) {
-            
+
             setStep('3ds-verification'); // Set step to 3DS verification
             setChallengeStepUpUrl(stepUpUrl)
             setChallengeAccessToken(accessToken)
@@ -520,7 +536,7 @@ export default function PaymentForm() {
             setShowChallenge(true)
           } else {
             throw new Error('Missing challenge data from payment response')
-        }
+          }
         }
       } else {
         const errorMsg = responseData.error || responseData.message || 'Payment failed';
@@ -579,28 +595,28 @@ export default function PaymentForm() {
           sessionId: md // Include the session ID from Cybersource
         })
       })
-      .then(response => response.json())
-      .then(data => {
-        if (data.result === 'SUCCESS') {
-          setStep('success')
-          setTransactionId(data.paymentResponse?.id || transactionId)
-          toast.success('Payment successful!')
-          localStorage.removeItem('challengeData') // Clear stored data
-        } else {
-          throw new Error(data.error || 'Payment completion failed')
-        }
-      })
-      .catch(error => {
-        toast.error(error instanceof Error ? error.message : 'Payment failed')
-        setStep('form')
-      })
-      .finally(() => {
-        // Reset challenge-related states
-        setChallengeStepUpUrl(null)
-        setChallengeAccessToken(null)
-        setPareq(null)
-        setShowChallenge(false)
-      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.result === 'SUCCESS') {
+            setStep('success')
+            setTransactionId(data.paymentResponse?.id || transactionId)
+            toast.success('Payment successful!')
+            localStorage.removeItem('challengeData') // Clear stored data
+          } else {
+            throw new Error(data.error || 'Payment completion failed')
+          }
+        })
+        .catch(error => {
+          toast.error(error instanceof Error ? error.message : 'Payment failed')
+          setStep('form')
+        })
+        .finally(() => {
+          // Reset challenge-related states
+          setChallengeStepUpUrl(null)
+          setChallengeAccessToken(null)
+          setPareq(null)
+          setShowChallenge(false)
+        })
     } else if (status === 'error') {
       setStep('form')
       toast.error(`Payment failed: ${message}`)
@@ -612,7 +628,7 @@ export default function PaymentForm() {
   const collectDeviceInformation = (sessionId?: string) => {
     // Use the provided session ID, UUID session ID, or fall back to Cardinal session ID
     const fingerprintSessionId = sessionId || uuidSessionId || cardinalSessionId || `mock-session-${Date.now()}`
-    
+
     const deviceInfo = {
       ipAddress: clientIpAddress || '127.0.0.1', // Use localhost as fallback if IP not available
       deviceIpAddress: clientIpAddress || '127.0.0.1',
@@ -634,7 +650,7 @@ export default function PaymentForm() {
       userAgentBrowserValue: navigator.userAgent,
       deviceUserAgent: navigator.userAgent
     }
-    
+
     return deviceInfo
   }
 
@@ -684,7 +700,7 @@ export default function PaymentForm() {
           const detectedCardTypes = decodedToken.content.paymentInformation.card.number.detectedCardTypes;
           const cardTypeCode = detectedCardTypes?.[0] || '001';
           setCardType(cardTypeCode);
-          
+
           resolve()
         })
       })
@@ -748,7 +764,7 @@ export default function PaymentForm() {
 
       // Extract data from the nested structure
       const consumerAuthInfo = authSetup.consumerAuthenticationInformation
-      
+
       if (!consumerAuthInfo) {
         throw new Error('No consumer authentication information received')
       }
@@ -759,28 +775,28 @@ export default function PaymentForm() {
       // Step 4: Trigger device data collection
       setIsAuthenticating(true)
       setIsCollectingDeviceData(true)
-      
+
       const cardinalCollectionForm = document.querySelector('#cardinal_collection_form') as HTMLFormElement
       if (cardinalCollectionForm && ddcUrl && accessToken && uuidSessionId) {
         // Build Cardinal Commerce URL with organization ID and session ID
         // The ddcUrl from Setup service is the base URL, we need to add orgId and sessionId
         const cardinalUrl = `${ddcUrl}?orgId=aby_0385_lakiremit&sessionId=${uuidSessionId}`
-        
+
         // Update form action and JWT
         cardinalCollectionForm.action = cardinalUrl
         const jwtInput = cardinalCollectionForm.querySelector('#cardinal_collection_form_input') as HTMLInputElement
         if (jwtInput) {
           jwtInput.value = accessToken
         }
-        
+
         console.log('Submitting Cardinal Commerce form with:', {
           url: cardinalUrl,
           accessToken: accessToken.substring(0, 20) + '...',
           sessionId: uuidSessionId
         })
-        
+
         cardinalCollectionForm.submit()
-        
+
         // Set a timeout to reset collecting state if Cardinal Commerce doesn't respond
         setTimeout(() => {
           if (isCollectingDeviceData) {
@@ -808,7 +824,7 @@ export default function PaymentForm() {
 
   const handleChallengeComplete = async (transactionId: string, md?: string) => {
     try {
-      
+
       // Get stored payment data from localStorage
       const storedChallengeData = localStorage.getItem('challengeData');
       if (!storedChallengeData) {
@@ -840,7 +856,7 @@ export default function PaymentForm() {
         setStep('success');
         setTransactionId(responseData.paymentResponse?.id || transactionId);
         toast.success('Payment successful!');
-        
+
         // Clear stored payment data
         localStorage.removeItem('challengeData');
       } else {
@@ -864,34 +880,34 @@ export default function PaymentForm() {
   // Update the Cardinal Commerce listener to handle device data collection state
   useEffect(() => {
     const cardinalListener = CardinalCommerceListener.getInstance();
-    
+
     // Handle Cardinal Commerce messages
     const handleCardinalMessage = (messageData: any) => {
       console.log('Cardinal Commerce message received:', messageData)
       setIsAuthenticating(false)
-      
+
       if (messageData.MessageType === "profile.completed" && messageData.Status === true) {
         // Only process if we haven't already processed this session ID
         if (!deviceDataCollected || cardinalSessionId !== uuidSessionId) {
           setDeviceDataCollected(true)
           setCardinalSessionId(uuidSessionId) // Use our generated UUID session ID
           setIsCollectingDeviceData(false)
-          
+
           console.log('Device fingerprinting completed with our UUID session ID:', uuidSessionId)
-          
+
           // Auto-proceed to payment processing since we have all required data (only once)
           if (!autoPaymentTriggeredRef.current) {
             autoPaymentTriggeredRef.current = true
-            
+
             // Get the current form data and proceed with payment
             const currentFormData = watch()
-            
-            
-          if (transaction && currentFormData.firstName && currentFormData.lastName && currentFormData.email && uuidSessionId) {
-            setTimeout(() => {
-              processPaymentWithDeviceData(uuidSessionId!, currentFormData)
-            }, 100)
-          }
+
+
+            if (transaction && currentFormData.firstName && currentFormData.lastName && currentFormData.email && uuidSessionId) {
+              setTimeout(() => {
+                processPaymentWithDeviceData(uuidSessionId!, currentFormData)
+              }, 100)
+            }
           }
         } else {
           console.log('Device fingerprinting already completed for session ID:', messageData.SessionId)
@@ -1088,7 +1104,7 @@ export default function PaymentForm() {
             <ChallengeIframe
               stepUpUrl={challengeStepUpUrl}
               accessToken={challengeAccessToken || ''}
-                            pareq={pareq}
+              pareq={pareq}
               onChallengeComplete={handleChallengeComplete}
             />
           </div>
@@ -1100,363 +1116,337 @@ export default function PaymentForm() {
   return (
     <>
       {/* Cardinal Commerce Device Data Collection - Outside main form */}
-      <iframe 
-        id="cardinal_collection_iframe" 
-        name="collectionIframe" 
-        height="10" 
-        width="10" 
+      <iframe
+        id="cardinal_collection_iframe"
+        name="collectionIframe"
+        height="10"
+        width="10"
         style={{ display: 'none' }}
       />
-      <form 
-        id="cardinal_collection_form" 
-        method="POST" 
+      <form
+        id="cardinal_collection_form"
+        method="POST"
         target="collectionIframe"
         action={ddcUrl ?? ''}
         style={{ display: 'none' }}
       >
-        <input 
-          id="cardinal_collection_form_input" 
-          type="hidden" 
+        <input
+          id="cardinal_collection_form_input"
+          type="hidden"
           name="JWT"
           value={accessToken || ''}
         />
       </form>
 
       <form onSubmit={handleSubmit(onSubmit)} className="card p-8">
-      <div className="flex items-center justify-center mb-6">
-        <div className="flex items-center space-x-2">
-          <Lock className="h-5 w-5 text-green-600" />
-          <span className="text-sm text-gray-600">Secured by Cybersource</span>
-          {transaction && (
-            <span className="text-xs text-gray-400 ml-4">
-              ID: {transaction.transactionId}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Transaction Loading State */}
-      {isLoadingTransaction && (
-        <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-4">
-              <Loader2 className="h-8 w-8 text-blue-600 animate-spin mr-3" />
-              <h3 className="text-lg font-semibold text-blue-900">Loading Transaction</h3>
-            </div>
-            <p className="text-blue-700">Please wait while we fetch your transaction details...</p>
+        <div className="flex items-center justify-center mb-6">
+          <div className="flex items-center space-x-2">
+            <Lock className="h-5 w-5 text-green-600" />
+            <span className="text-sm text-gray-600">Secured by Cybersource</span>
+            {transaction && (
+              <span className="text-xs text-gray-400 ml-4">
+                ID: {transaction.transactionId}
+              </span>
+            )}
           </div>
         </div>
-      )}
 
-      {transactionError && (
-        <div className="mb-8 p-6 bg-gradient-to-r from-red-50 to-pink-50 rounded-lg border border-red-200">
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-4">
-              <AlertCircle className="h-8 w-8 text-red-600 mr-3" />
-              <h3 className="text-lg font-semibold text-red-900">Transaction Error</h3>
-            </div>
-            <p className="text-red-700">{transactionError}</p>
-          </div>
-        </div>
-      )}
-
-      {transaction && !isLoadingTransaction && (
-        <div className="mb-8 p-4 bg-green-50 rounded-lg">
-          <div className="text-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Transaction Details</h3>
-            <div className="text-3xl font-bold text-green-600">
-              {transaction.currency} {transaction.totalAmount.toFixed(2)}
+        {/* Transaction Loading State */}
+        {isLoadingTransaction && (
+          <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+            <div className="text-center">
+              <div className="flex items-center justify-center mb-4">
+                <Loader2 className="h-8 w-8 text-blue-600 animate-spin mr-3" />
+                <h3 className="text-lg font-semibold text-blue-900">Loading Transaction</h3>
+              </div>
+              <p className="text-blue-700">Please wait while we fetch your transaction details...</p>
             </div>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-gray-600">Transaction ID</p>
-              <p className="font-mono font-medium">{transaction.transactionId}</p>
-            </div>
-            <div>
-              <p className="text-gray-600">Receiver</p>
-              <p className="font-medium">{transaction.receiverFullName}</p>
-            </div>
-            <div>
-              <p className="text-gray-600">Bank</p>
-              <p className="font-medium">{transaction.bankName}</p>
-            </div>
-            <div>
-              <p className="text-gray-600">Status</p>
-              <p className="font-medium">{transaction.paymentStatus}</p>
+        )}
+
+        {transactionError && (
+          <div className="mb-8 p-6 bg-gradient-to-r from-red-50 to-pink-50 rounded-lg border border-red-200">
+            <div className="text-center">
+              <div className="flex items-center justify-center mb-4">
+                <AlertCircle className="h-8 w-8 text-red-600 mr-3" />
+                <h3 className="text-lg font-semibold text-red-900">Transaction Error</h3>
+              </div>
+              <p className="text-red-700">{transactionError}</p>
             </div>
           </div>
-          
-          {/* Hidden form fields for amount and currency */}
-          <input type="hidden" {...register('amount', { required: false })} />
-          <input type="hidden" {...register('currency', { required: false })} />
-        </div>
-      )}
+        )}
 
-      {/* Personal Information */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <CreditCard className="h-5 w-5 mr-2" />
-          Personal Information
-        </h3>
+        {transaction && !isLoadingTransaction && (
+          <div className="mb-8 p-4 bg-green-50 rounded-lg">
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Transaction Details</h3>
+              <div className="text-3xl font-bold text-green-600">
+                {transaction.currency} {transaction.totalAmount.toFixed(2)}
+              </div>
+            </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label htmlFor="firstName" className="form-label">
-              First Name *
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-gray-600">Transaction ID</p>
+                <p className="font-mono font-medium">{transaction.transactionId}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Receiver</p>
+                <p className="font-medium">{transaction.receiverFullName}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Bank</p>
+                <p className="font-medium">{transaction.bankName}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Status</p>
+                <p className="font-medium">{transaction.paymentStatus}</p>
+              </div>
+            </div>
+
+            {/* Hidden form fields for amount and currency */}
+            <input type="hidden" {...register('amount', { required: false })} />
+            <input type="hidden" {...register('currency', { required: false })} />
+          </div>
+        )}
+
+        {/* Personal Information */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <CreditCard className="h-5 w-5 mr-2" />
+            Personal Information
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label htmlFor="firstName" className="form-label">
+                First Name *
+              </label>
+              <input
+                id="firstName"
+                type="text"
+                className="form-input"
+                placeholder="John"
+                {...register('firstName', {
+                  required: 'First name is required',
+                  minLength: { value: 2, message: 'Minimum 2 characters' }
+                })}
+              />
+              {errors.firstName && (
+                <p className="form-error">{errors.firstName.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="lastName" className="form-label">
+                Last Name *
+              </label>
+              <input
+                id="lastName"
+                type="text"
+                className="form-input"
+                placeholder="Doe"
+                {...register('lastName', {
+                  required: 'Last name is required',
+                  minLength: { value: 2, message: 'Minimum 2 characters' }
+                })}
+              />
+              {errors.lastName && (
+                <p className="form-error">{errors.lastName.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label htmlFor="email" className="form-label">
+              Email Address *
             </label>
             <input
-              id="firstName"
-              type="text"
+              id="email"
+              type="email"
               className="form-input"
-              placeholder="John"
-              {...register('firstName', {
-                required: 'First name is required',
-                minLength: { value: 2, message: 'Minimum 2 characters' }
+              placeholder="john.doe@example.com"
+              {...register('email', {
+                required: 'Email is required',
+                pattern: {
+                  value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                  message: 'Invalid email address'
+                }
               })}
             />
-            {errors.firstName && (
-              <p className="form-error">{errors.firstName.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="lastName" className="form-label">
-              Last Name *
-            </label>
-            <input
-              id="lastName"
-              type="text"
-              className="form-input"
-              placeholder="Doe"
-              {...register('lastName', {
-                required: 'Last name is required',
-                minLength: { value: 2, message: 'Minimum 2 characters' }
-              })}
-            />
-            {errors.lastName && (
-              <p className="form-error">{errors.lastName.message}</p>
+            {errors.email && (
+              <p className="form-error">{errors.email.message}</p>
             )}
           </div>
         </div>
 
-        <div className="mb-4">
-          <label htmlFor="email" className="form-label">
-            Email Address *
-          </label>
-          <input
-            id="email"
-            type="email"
-            className="form-input"
-            placeholder="john.doe@example.com"
-            {...register('email', {
-              required: 'Email is required',
-              pattern: {
-                value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                message: 'Invalid email address'
-              }
-            })}
-          />
-          {errors.email && (
-            <p className="form-error">{errors.email.message}</p>
-          )}
-        </div>
-      </div>
+        {/* Card Information */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <Lock className="h-5 w-5 mr-2" />
+            Card Information
+          </h3>
 
-      {/* Card Information */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Lock className="h-5 w-5 mr-2" />
-          Card Information
-        </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="form-label">
+                Card Number * {(() => {
+                  const cardTypeName = CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]
+                  return cardTypeName ? `${cardTypeName} 💳` : '💳'
+                })()}
+              </label>
+              <div
+                ref={cardNumberRef}
+                className="microform-field bg-white"
+                style={{ minHeight: '48px' }}
+              />
+              {cardType !== 'unknown' && CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES] && (
+                <div className="mt-2 text-sm text-green-600 flex items-center">
+                  <CheckCircle className="h-4 w-4 mr-1" />
+                  {CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]} detected
+                </div>
+              )}
+              {mounted && !isInitialized && (
+                <div className="flex items-center mt-2 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading secure card input...
+                </div>
+              )}
+            </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="form-label">
-              Card Number * {(() => {
-                const cardTypeName = CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]
-                return cardTypeName ? `${cardTypeName} 💳` : '💳'
-              })()}
-            </label>
-            <div
-              ref={cardNumberRef}
-              className="microform-field bg-white"
-              style={{ minHeight: '48px' }}
-            />
-            {cardType !== 'unknown' && CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES] && (
-              <div className="mt-2 text-sm text-green-600 flex items-center">
-                <CheckCircle className="h-4 w-4 mr-1" />
-                {CARD_TYPE_CODES[cardType as keyof typeof CARD_TYPE_CODES]} detected
-              </div>
-            )}
-            {mounted && !isInitialized && (
-              <div className="flex items-center mt-2 text-sm text-gray-500">
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Loading secure card input...
-              </div>
-            )}
+            <div>
+              <label className="form-label">
+                Security Code *
+              </label>
+              <div
+                ref={cvvRef}
+                className="microform-field bg-white"
+                style={{ minHeight: '48px' }}
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="form-label">
-              Security Code *
-            </label>
-            <div
-              ref={cvvRef}
-              className="microform-field bg-white"
-              style={{ minHeight: '48px' }}
-            />
-          </div>
-        </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="expirationMonth" className="form-label">
+                Expiration Month *
+              </label>
+              <select
+                id="expirationMonth"
+                className="form-input"
+                {...register('expirationMonth', { required: 'Month is required' })}
+              >
+                <option value="">Month</option>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                  <option key={month} value={month.toString().padStart(2, '0')}>
+                    {month.toString().padStart(2, '0')} - {new Date(0, month - 1).toLocaleString('default', { month: 'long' })}
+                  </option>
+                ))}
+              </select>
+              {errors.expirationMonth && (
+                <p className="form-error">{errors.expirationMonth.message}</p>
+              )}
+            </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="expirationMonth" className="form-label">
-              Expiration Month *
-            </label>
-            <select
-              id="expirationMonth"
-              className="form-input"
-              {...register('expirationMonth', { required: 'Month is required' })}
-            >
-              <option value="">Month</option>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                <option key={month} value={month.toString().padStart(2, '0')}>
-                  {month.toString().padStart(2, '0')} - {new Date(0, month - 1).toLocaleString('default', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-            {errors.expirationMonth && (
-              <p className="form-error">{errors.expirationMonth.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="expirationYear" className="form-label">
-              Expiration Year *
-            </label>
-            <select
-              id="expirationYear"
-              className="form-input"
-              {...register('expirationYear', { required: 'Year is required' })}
-            >
-              <option value="">Year</option>
-              {Array.from({ length: 20 }, (_, i) => new Date().getFullYear() + i).map(year => (
-                <option key={year} value={year.toString()}>
-                  {year}
-                </option>
-              ))}
-            </select>
-            {errors.expirationYear && (
-              <p className="form-error">{errors.expirationYear.message}</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Billing Address */}
-      <AddressForm 
-        name="billing" 
-        required={true}
-        control={control}
-        watch={watch}
-        setValue={setValue}
-        errors={errors}
-      />
-
-      {/* Save Card Option */}
-      <div className="mt-4 mb-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <label className="flex items-center space-x-3 cursor-pointer">
-          <input
-            type="checkbox"
-            className="form-checkbox h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            {...register('saveCard')}
-            defaultChecked={false}
-          />
-          <div>
-            <span className="text-sm font-medium text-gray-700">
-              Save this card for future payments
-            </span>
-            <p className="text-xs text-gray-500 mt-1">
-              Your card information will be securely stored for faster checkout next time
-            </p>
-          </div>
-        </label>
-      </div>
-
-      {/* Security Notice */}
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-start">
-          <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
-          <div className="text-sm text-blue-800">
-            <p className="font-medium mb-1">Your payment is secure</p>
-            <p>Your card information is encrypted and processed securely through Cybersource. We never store your card details.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 3D Secure Status */}
-      {mounted && isAuthenticating && (
-        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <div className="flex items-start">
-            <Loader2 className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
-            <div className="text-sm text-yellow-800">
-              <p className="font-medium mb-1">3D Secure Verification</p>
-              <p>Please wait while we verify your card with your bank...</p>
+            <div>
+              <label htmlFor="expirationYear" className="form-label">
+                Expiration Year *
+              </label>
+              <select
+                id="expirationYear"
+                className="form-input"
+                {...register('expirationYear', { required: 'Year is required' })}
+              >
+                <option value="">Year</option>
+                {Array.from({ length: 20 }, (_, i) => new Date().getFullYear() + i).map(year => (
+                  <option key={year} value={year.toString()}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+              {errors.expirationYear && (
+                <p className="form-error">{errors.expirationYear.message}</p>
+              )}
             </div>
           </div>
         </div>
-      )}
 
-      {mounted && deviceDataCollected && !isAuthenticating && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-start">
-            <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
-            <div className="text-sm text-green-800">
-              <p className="font-medium mb-1">Card Verification Complete</p>
-              <p>Your card has been verified successfully. Processing payment...</p>
-            </div>
-          </div>
-        </div>
-      )}
+        {/* Billing Address hidden (prefilled with fixed values) */}
 
-      {/* Device Data Collection Status */}
-      {mounted && isCollectingDeviceData && (
+        {/* Save Card Option hidden for now */}
+
+        {/* Security Notice */}
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-start">
-            <Loader2 className="h-5 w-5 text-blue-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
+            <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
             <div className="text-sm text-blue-800">
-              <p className="font-medium mb-1">Collecting Device Data</p>
-              <p>Please wait while we securely collect device information...</p>
+              <p className="font-medium mb-1">Your payment is secure</p>
+              <p>Your card information is encrypted and processed securely through Cybersource. We never store your card details.</p>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Submit Button */}
-      <button
-        type="submit"
-        disabled={
-          isLoading || 
-          !isInitialized || 
-          isAuthenticating || 
-          isCollectingDeviceData || 
-          isLoadingTransaction ||
-          !transaction ||
-          !!transactionError ||
-          (deviceDataCollected && !!cardinalSessionId && autoPaymentTriggeredRef.current)
-        }
-        className="btn-primary w-full flex items-center justify-center space-x-2"
-      >
-        {getButtonContent()}
-      </button>
+        {/* 3D Secure Status */}
+        {mounted && isAuthenticating && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-start">
+              <Loader2 className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
+              <div className="text-sm text-yellow-800">
+                <p className="font-medium mb-1">3D Secure Verification</p>
+                <p>Please wait while we verify your card with your bank...</p>
+              </div>
+            </div>
+          </div>
+        )}
 
-      {mounted && !isInitialized && (
-        <p className="text-center text-sm text-gray-500 mt-4">
-          {isLoadingTransaction ? 'Loading transaction...' : 'Initializing secure payment form...'}
-        </p>
-      )}
+        {mounted && deviceDataCollected && !isAuthenticating && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-start">
+              <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div className="text-sm text-green-800">
+                <p className="font-medium mb-1">Card Verification Complete</p>
+                <p>Your card has been verified successfully. Processing payment...</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Device Data Collection Status */}
+        {mounted && isCollectingDeviceData && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start">
+              <Loader2 className="h-5 w-5 text-blue-600 mt-0.5 mr-3 animate-spin flex-shrink-0" />
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-1">Collecting Device Data</p>
+                <p>Please wait while we securely collect device information...</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={
+            isLoading ||
+            !isInitialized ||
+            isAuthenticating ||
+            isCollectingDeviceData ||
+            isLoadingTransaction ||
+            !transaction ||
+            !!transactionError ||
+            (deviceDataCollected && !!cardinalSessionId && autoPaymentTriggeredRef.current)
+          }
+          className="btn-primary w-full flex items-center justify-center space-x-2"
+        >
+          {getButtonContent()}
+        </button>
+
+        {mounted && !isInitialized && (
+          <p className="text-center text-sm text-gray-500 mt-4">
+            {isLoadingTransaction ? 'Loading transaction...' : 'Initializing secure payment form...'}
+          </p>
+        )}
       </form>
 
       {/* {paymentResult && (
