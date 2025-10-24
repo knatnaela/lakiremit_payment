@@ -102,8 +102,10 @@ export default function MasterCardPaymentForm() {
   useEffect(() => {
     const fn = searchParams.get('firstName') || ''
     const ln = searchParams.get('lastName') || ''
+    const em = searchParams.get('email') || ''
     if (fn) { setValue('firstName', fn) }
     if (ln) { setValue('lastName', ln) }
+    if (em) { setValue('email', em) }
     setValue('billing', {
       address: '1295 Charleston rd',
       city: 'CA',
