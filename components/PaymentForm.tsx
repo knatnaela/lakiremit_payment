@@ -162,11 +162,11 @@ export default function PaymentForm() {
     if (em) { setValue('email', em) }
     setValue('billing', {
       address: '1295 Charleston rd',
-      city: 'CA',
-      state: '',
+      city: 'Mountain View',
+      state: 'CA',
       postalCode: '94043',
       country: 'US',
-      address2: 'Mountain View'
+      address2: ''
     })
 
     const fetchTransaction = async () => {
