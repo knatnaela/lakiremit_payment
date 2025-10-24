@@ -14,7 +14,6 @@ import {
 import ChallengeIframe from './ChallengeIframe'
 import { CardinalCommerceListener } from './CardinalCommerceListener'
 import { decodeJWT, generateUUID } from '@/utils/utils'
-import AddressForm from './AddressForm'
 import { useSearchParams } from 'next/navigation'
 import { API_CONFIG, API_ENDPOINTS, buildApiUrl, CHALLENGE_URLS } from '@/constants/api'
 
@@ -126,8 +125,7 @@ export default function PaymentForm() {
     handleSubmit,
     formState: { errors },
     watch,
-    setValue,
-    control
+    setValue
   } = useForm<PaymentFormData>({
     defaultValues: {
       currency: 'USD',

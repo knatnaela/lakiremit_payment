@@ -10,7 +10,6 @@ import {
   TransactionResponse
 } from '@/types/payment'
 import ChallengeIframe from './ChallengeIframe'
-import AddressForm from './AddressForm'
 import { useSearchParams } from 'next/navigation'
 import { API_ENDPOINTS, buildApiUrl, CHALLENGE_URLS } from '@/constants/api'
 
@@ -69,9 +68,8 @@ export default function MasterCardPaymentForm() {
     register,
     handleSubmit,
     formState: { errors },
-    watch,
     setValue,
-    control
+    // watch and control removed since address form is hidden
   } = useForm<PaymentFormData>({
     defaultValues: {
       currency: 'USD',
