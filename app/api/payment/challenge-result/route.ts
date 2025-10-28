@@ -1,3 +1,4 @@
+import { API_CONFIG } from '@/constants/api'
 import { type NextRequest } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
                   timestamp: new Date().toISOString()
                 };
                 
-                const targetOrigin = '${baseUrl}';
+                const targetOrigin = '${API_CONFIG.FRONTEND_BASE_URL}';
                 
                 try {
                   window.parent.postMessage(messageData, targetOrigin);
