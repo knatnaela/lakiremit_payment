@@ -2,6 +2,7 @@
 
 import toast from 'react-hot-toast'
 import { PaymentProvider, PaymentData, PaymentResult, ChallengeData, ChallengeResult, DeviceData } from './PaymentProvider'
+import { CHALLENGE_URLS } from '@/constants/api'
 
 declare global {
   interface Window {
@@ -30,7 +31,7 @@ export class MastercardProvider implements PaymentProvider {
 
   async initialize(): Promise<void> {
     try {
-      
+
       // Get session from backend
       const response = await fetch('http://localhost:8080/api/v1/payment/checkout-token', {
         method: 'POST',
@@ -40,33 +41,33 @@ export class MastercardProvider implements PaymentProvider {
           'provider': 'mastercard'
         })
       })
-      
+
       const data = await response.json()
-      
+
       if (data.result !== 'SUCCESS') {
         throw new Error(`Backend API returned error: ${data.result}`)
       }
-      
+
       if (!data.sessionId || !data.merchantId) {
         throw new Error('No session ID or merchant ID received from backend API')
       }
-      
+
       this.sessionId = data.sessionId
       this.merchantId = data.merchantId
-      
+
       // Load Mastercard script
       if (this.merchantId) {
         await this.loadMastercardScript(this.merchantId)
       }
-      
+
       // Create field elements
       this.createFieldElements()
-      
+
       // Configure PaymentSession
       this.configurePaymentSession()
-      
+
       this.isInitializedState = true
-      
+
     } catch (error) {
       throw error
     }
@@ -82,7 +83,7 @@ export class MastercardProvider implements PaymentProvider {
       if (window.PaymentSession) {
         window.PaymentSession.updateSessionFromForm('card')
       }
-      
+
       // The session ID becomes our "token"
       resolve(this.sessionId!)
     })
@@ -91,13 +92,13 @@ export class MastercardProvider implements PaymentProvider {
   async processPayment(paymentData: PaymentData): Promise<PaymentResult> {
     try {
       const deviceInfo = await this.collectDeviceData()
-      
+
       const paymentRequest = {
         sessionId: paymentData.token, // This is the session ID for Mastercard
         cardHolder: `${paymentData.firstName} ${paymentData.lastName}`,
         currency: paymentData.currency,
         totalAmount: paymentData.amount,
-        returnUrl: 'http://localhost:3000/api/payment/challenge-result',
+        returnUrl: CHALLENGE_URLS.RESULT_CALLBACK,
         merchantReference: 'order-' + Date.now(),
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: false,
@@ -120,14 +121,14 @@ export class MastercardProvider implements PaymentProvider {
 
       if (responseData.result === 'SUCCESS') {
         const paymentResponse = responseData.paymentResponse
-        
+
         if (paymentResponse.status === 'PENDING_AUTHENTICATION') {
           // Handle 3DS challenge
           const stepUpUrl = paymentResponse.consumerAuthenticationInformation?.stepUpUrl
           const pareq = paymentResponse.consumerAuthenticationInformation?.pareq
           const accessToken = paymentResponse.consumerAuthenticationInformation?.accessToken
           const authTransactionId = paymentResponse.consumerAuthenticationInformation?.authenticationTransactionId
-          
+
           if (stepUpUrl && pareq && accessToken) {
             return {
               success: true,
@@ -141,7 +142,7 @@ export class MastercardProvider implements PaymentProvider {
             }
           }
         }
-        
+
         return {
           success: true,
           transactionId: paymentResponse?.id || paymentResponse?.transactionId
@@ -201,7 +202,7 @@ export class MastercardProvider implements PaymentProvider {
     const deviceSessionId = `mastercard-session-${Date.now()}`
     this.deviceSessionId = deviceSessionId
     this.deviceDataCollected = true
-    
+
     return {
       sessionId: deviceSessionId,
       ipAddress: '127.0.0.1', // This should come from your IP detection logic
@@ -238,7 +239,7 @@ export class MastercardProvider implements PaymentProvider {
       script.onload = () => {
         let attempts = 0
         const maxAttempts = 100
-        
+
         const waitForPaymentSession = () => {
           if (window.PaymentSession && typeof window.PaymentSession.configure === 'function') {
             resolve()
@@ -256,7 +257,7 @@ export class MastercardProvider implements PaymentProvider {
       script.onerror = () => {
         reject(new Error('Failed to load Mastercard script'))
       }
-      
+
       document.head.appendChild(script)
     })
   }
@@ -270,7 +271,7 @@ export class MastercardProvider implements PaymentProvider {
     cardNumberField.setAttribute('aria-label', 'enter your card number')
     cardNumberField.readOnly = true
     cardNumberField.tabIndex = 1
-    
+
     // Create CVV field
     const cvvField = document.createElement('input')
     cvvField.id = 'security-code'
@@ -279,7 +280,7 @@ export class MastercardProvider implements PaymentProvider {
     cvvField.setAttribute('aria-label', 'three digit CCV security code')
     cvvField.readOnly = true
     cvvField.tabIndex = 4
-    
+
     // Create expiry fields
     const expiryMonthField = document.createElement('input')
     expiryMonthField.id = 'expiry-month'
@@ -288,7 +289,7 @@ export class MastercardProvider implements PaymentProvider {
     expiryMonthField.setAttribute('aria-label', 'two digit expiry month')
     expiryMonthField.readOnly = true
     expiryMonthField.tabIndex = 2
-    
+
     const expiryYearField = document.createElement('input')
     expiryYearField.id = 'expiry-year'
     expiryYearField.className = 'input-field'
@@ -296,7 +297,7 @@ export class MastercardProvider implements PaymentProvider {
     expiryYearField.setAttribute('aria-label', 'two digit expiry year')
     expiryYearField.readOnly = true
     expiryYearField.tabIndex = 3
-    
+
     // Create cardholder name field
     const cardholderNameField = document.createElement('input')
     cardholderNameField.id = 'cardholder-name'
@@ -305,7 +306,7 @@ export class MastercardProvider implements PaymentProvider {
     cardholderNameField.setAttribute('aria-label', 'enter name on card')
     cardholderNameField.readOnly = true
     cardholderNameField.tabIndex = 5
-    
+
     // Load fields into containers
     if (this.cardNumberElement) {
       this.cardNumberElement.appendChild(cardNumberField)
@@ -313,7 +314,7 @@ export class MastercardProvider implements PaymentProvider {
     if (this.cvvElement) {
       this.cvvElement.appendChild(cvvField)
     }
-    
+
     // Store expiry fields for later use
     this.expiryMonthField = expiryMonthField
     this.expiryYearField = expiryYearField
@@ -342,7 +343,7 @@ export class MastercardProvider implements PaymentProvider {
           // if (response.status === "ok") {
           // }
         },
-        formSessionUpdate: (response: { status: string, errors: { cardNumber: string, securityCode: string, expiryMonth: string, expiryYear: string } } ) => {
+        formSessionUpdate: (response: { status: string, errors: { cardNumber: string, securityCode: string, expiryMonth: string, expiryYear: string } }) => {
           if (response.status === "ok") {
             // Handle successful form update
           } else if (response.status === "fields_in_error") {

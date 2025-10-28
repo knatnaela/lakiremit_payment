@@ -3,6 +3,7 @@
 import toast from 'react-hot-toast'
 import { PaymentProvider, CardData, PaymentData, PaymentResult, ChallengeData, ChallengeResult, DeviceData } from './PaymentProvider'
 import { CardinalCommerceListener } from '../../CardinalCommerceListener'
+import { CHALLENGE_URLS, API_CONFIG } from '@/constants/api'
 
 interface MicroformInstance {
   createToken: (data: any, callback: (err: any, token: string) => void) => void
@@ -32,7 +33,7 @@ export class CybersourceProvider implements PaymentProvider {
 
   async initialize(): Promise<void> {
     try {
-      
+
       // Get microform token from backend
       const response = await fetch('http://localhost:8080/api/v1/payment/checkout-token', {
         method: 'POST',
@@ -42,38 +43,38 @@ export class CybersourceProvider implements PaymentProvider {
           'provider': 'cybersource'
         })
       })
-      
+
       const data = await response.json()
-      
+
       if (data.result !== 'SUCCESS') {
         throw new Error(`Backend API returned error: ${data.result}`)
       }
-      
+
       if (!data.token) {
         throw new Error('No token received from backend API')
       }
-      
+
       this.checkoutToken = data.token
-      
+
       // Decode JWT to get script URL and integrity
       const decodedJWT = this.decodeJWT(data.token)
       const clientLibrary = decodedJWT.ctx?.[0]?.data?.clientLibrary
       const clientLibraryIntegrity = decodedJWT.ctx?.[0]?.data?.clientLibraryIntegrity
-      
+
       if (!clientLibrary || !clientLibraryIntegrity) {
         throw new Error('Missing clientLibrary or clientLibraryIntegrity in JWT')
       }
-      
+
       // Load the Cybersource script
       await this.loadCybersourceScript(clientLibrary, clientLibraryIntegrity)
-      
+
       // Initialize Flex SDK
       if (!window.Flex) {
         throw new Error('Cybersource Flex library is not available')
       }
-      
+
       const flex = new window.Flex(data.token)
-      this.microformInstance = flex.microform({ 
+      this.microformInstance = flex.microform({
         styles: {
           'input': {
             'font-size': '16px',
@@ -86,19 +87,19 @@ export class CybersourceProvider implements PaymentProvider {
       const numberField = this.microformInstance.createField('number', {
         placeholder: 'Card Number'
       })
-      
+
       const securityCodeField = this.microformInstance.createField('securityCode', {
         placeholder: 'CVV'
       })
-      
+
       // Load fields into containers
       if (this.cardNumberElement) {
         numberField.load(this.cardNumberElement)
-        
+
         numberField.on('change', () => {
           // Handle card number validation silently
         })
-        
+
         numberField.on('error', () => {
           toast.error('Card number field error')
         })
@@ -106,16 +107,16 @@ export class CybersourceProvider implements PaymentProvider {
 
       if (this.cvvElement) {
         securityCodeField.load(this.cvvElement)
-        
+
         securityCodeField.on('change', () => {
           // Handle security code validation silently
         })
-        
+
         securityCodeField.on('error', () => {
           toast.error('Security code field error')
         })
       }
-      
+
       // Set up Cardinal Commerce message listener
       const cardinalListener = CardinalCommerceListener.getInstance()
       cardinalListener.startListening((messageData: any) => {
@@ -126,7 +127,7 @@ export class CybersourceProvider implements PaymentProvider {
       })
 
       this.isInitializedState = true
-      
+
     } catch (error) {
       throw error
     }
@@ -154,13 +155,13 @@ export class CybersourceProvider implements PaymentProvider {
   async processPayment(paymentData: PaymentData): Promise<PaymentResult> {
     try {
       const deviceInfo = this.collectDeviceInformation()
-      
+
       const paymentRequest = {
         transientToken: paymentData.token,
         cardHolder: `${paymentData.firstName} ${paymentData.lastName}`,
         currency: paymentData.currency,
         totalAmount: paymentData.amount,
-        returnUrl: 'http://localhost:3000/api/payment/challenge-result',
+        returnUrl: CHALLENGE_URLS.RESULT_CALLBACK,
         merchantReference: 'order-' + Date.now(),
         ecommerceIndicatorAuth: 'internet',
         isSaveCard: false,
@@ -181,14 +182,14 @@ export class CybersourceProvider implements PaymentProvider {
 
       if (responseData.result === 'SUCCESS') {
         const paymentResponse = responseData.paymentResponse
-        
+
         if (paymentResponse.status === 'PENDING_AUTHENTICATION') {
           // Handle 3DS challenge
           const stepUpUrl = paymentResponse.consumerAuthenticationInformation?.stepUpUrl
           const pareq = paymentResponse.consumerAuthenticationInformation?.pareq
           const accessToken = paymentResponse.consumerAuthenticationInformation?.accessToken
           const authTransactionId = paymentResponse.consumerAuthenticationInformation?.authenticationTransactionId
-          
+
           if (stepUpUrl && pareq && accessToken) {
             return {
               success: true,
@@ -202,7 +203,7 @@ export class CybersourceProvider implements PaymentProvider {
             }
           }
         }
-        
+
         return {
           success: true,
           transactionId: paymentResponse?.id || paymentResponse?.transactionId
@@ -313,11 +314,11 @@ export class CybersourceProvider implements PaymentProvider {
       const script = document.createElement('script')
       script.src = scriptUrl
       script.integrity = integrity
-      script.crossOrigin = 'http://localhost:3000'
+      script.crossOrigin = API_CONFIG.FRONTEND_BASE_URL
       script.onload = () => {
         let attempts = 0
         const maxAttempts = 100
-        
+
         const waitForFLEX = () => {
           if (window.Flex && typeof window.Flex === 'function') {
             resolve()
@@ -335,7 +336,7 @@ export class CybersourceProvider implements PaymentProvider {
       script.onerror = () => {
         reject(new Error('Failed to load Cybersource script'))
       }
-      
+
       document.head.appendChild(script)
     })
   }

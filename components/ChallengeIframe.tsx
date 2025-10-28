@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { API_CONFIG } from '@/constants/api'
 
 interface ChallengeIframeProps {
   stepUpUrl: string
@@ -17,7 +18,7 @@ const CHALLENGE_WINDOW_SIZES = {
   '05': 'fullscreen'
 } as const;
 
-const ChallengeIframe: React.FC<ChallengeIframeProps> = ({ 
+const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
   stepUpUrl,
   accessToken,
   pareq,
@@ -38,7 +39,7 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
       const base64 = parts.length === 3 ? parts[1] : parts[0];
       const decoded = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
       const pareqData = JSON.parse(decoded);
-      
+
       const windowSize = pareqData?.challengeWindowSize || '02';
       return CHALLENGE_WINDOW_SIZES[windowSize as keyof typeof CHALLENGE_WINDOW_SIZES];
     } catch (error) {
@@ -53,17 +54,20 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
   // Handle messages from iframe with origin verification
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      
+
       // SECURITY: Verify the origin of the message
-      const expectedOrigin = 'http://localhost:3000'; // In production, use your actual domain
+      // Use dynamic origin detection for both local and production
+      const expectedOrigin = API_CONFIG.FRONTEND_BASE_URL || window.location.origin;
+
       if (event.origin !== expectedOrigin) {
+        console.warn('⚠️ Message from unexpected origin:', event.origin, 'expected:', expectedOrigin);
         return;
       }
-      
+
       // Handle challenge completion messages
       if (event.data?.type === '3ds-challenge-complete') {
         const { transactionId, md, status } = event.data;
-        
+
         if (status === 'success' && transactionId) {
           onChallengeComplete(transactionId, md);
         } else if (status === 'error') {
@@ -74,10 +78,10 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
 
     // Store reference to remove listener later
     messageListenerRef.current = handleMessage;
-    
+
     // Add event listener
     window.addEventListener('message', handleMessage);
-    
+
     return () => {
       if (messageListenerRef.current) {
         window.removeEventListener('message', messageListenerRef.current);
@@ -97,12 +101,12 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
         // Check if iframe has navigated to our return URL
         const iframeUrl = iframe.contentWindow?.location.href;
         if (iframeUrl && iframeUrl.includes('/api/payment/challenge-result')) {
-          
+
           // Extract parameters from the URL
           const url = new URL(iframeUrl);
           const transactionId = url.searchParams.get('TransactionId');
           const md = url.searchParams.get('MD');
-          
+
           if (transactionId) {
             onChallengeComplete(transactionId, md || undefined);
           }
@@ -115,7 +119,7 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
 
     // Check URL periodically (less frequent since we have postMessage)
     const interval = setInterval(checkIframeUrl, 2000);
-    
+
     return () => clearInterval(interval);
   }, [onChallengeComplete]);
 
@@ -138,14 +142,14 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
   }, [stepUpUrl, accessToken, dimensions]);
 
   return (
-    <div style={{ 
+    <div style={{
       width: dimensions === 'fullscreen' ? '100vw' : width,
       height: dimensions === 'fullscreen' ? '100vh' : height,
-      position: 'relative' 
+      position: 'relative'
     }}>
-      <iframe 
+      <iframe
         ref={iframeRef}
-        name="step-up-iframe" 
+        name="step-up-iframe"
         width={width}
         height={height}
         style={{ border: 'none' }}
@@ -161,10 +165,10 @@ const ChallengeIframe: React.FC<ChallengeIframeProps> = ({
         style={{ display: 'none' }}
       >
         <input type="hidden" name="JWT" value={accessToken} />
-        <input 
-          type="hidden" 
-          name="MD" 
-          value={`session_${Date.now()}`} 
+        <input
+          type="hidden"
+          name="MD"
+          value={`session_${Date.now()}`}
         />
       </form>
     </div>

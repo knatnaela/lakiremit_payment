@@ -168,24 +168,24 @@ export async function POST(request: NextRequest) {
         </div>
         
         <script>
-          (function() {
-            if (window !== window.top) {
-              const messageData = {
-                type: '3ds-challenge-complete',
-                status: 'error',
-                error: 'Authentication failed',
-                timestamp: new Date().toISOString()
-              };
-              
-              const targetOrigin = 'http://localhost:3000';
-              
-              try {
-                window.parent.postMessage(messageData, targetOrigin);
-              } catch (error) {
-                // Error sending error message
+            (function() {
+              if (window !== window.top) {
+                const messageData = {
+                  type: '3ds-challenge-complete',
+                  status: 'error',
+                  error: 'Authentication failed',
+                  timestamp: new Date().toISOString()
+                };
+                
+                const targetOrigin = '${baseUrl}';
+                
+                try {
+                  window.parent.postMessage(messageData, targetOrigin);
+                } catch (error) {
+                  // Error sending error message
+                }
               }
-            }
-          })();
+            })();
         </script>
       </body>
       </html>

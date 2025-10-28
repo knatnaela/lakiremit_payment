@@ -3,15 +3,18 @@
  */
 
 export function getBaseUrl(): string {
-  // Always return a valid base URL
-  return 'http://localhost:3000'
+  // Use environment variable or fall back to localhost
+  if (typeof window !== 'undefined') {
+    return window.location.origin
+  }
+  return process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 }
 
 export function buildUrl(path: string, params?: Record<string, string>): string {
   try {
     const baseUrl = getBaseUrl()
     const url = new URL(path, baseUrl)
-    
+
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value && value !== 'null' && value !== 'undefined') {
@@ -19,12 +22,13 @@ export function buildUrl(path: string, params?: Record<string, string>): string 
         }
       })
     }
-    
+
     return url.toString()
   } catch (error) {
     console.error('Error building URL:', error)
     // Fallback to a safe URL
-    return `http://localhost:3000${path}`
+    const fallbackBase = getBaseUrl()
+    return `${fallbackBase}${path}`
   }
 }
 
@@ -33,7 +37,7 @@ export function buildChallengeProcessingUrl(transactionId: string, md: string, s
   if (!transactionId || !md) {
     throw new Error('Missing required parameters: transactionId and md are required')
   }
-  
+
   return buildUrl('/challenge-processing', {
     TransactionId: transactionId,
     MD: md,

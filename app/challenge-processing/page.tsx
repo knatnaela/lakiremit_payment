@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import ClientChallengeProcessor from './ClientChallengeProcessor'
+import { API_CONFIG } from '@/constants/api'
 
 export default async function ChallengeProcessing({
   searchParams,
@@ -11,7 +12,8 @@ export default async function ChallengeProcessing({
 
   if (!transactionId || !md) {
     // Use direct URL construction to avoid any issues
-    redirect('http://localhost:3000/?error=missing_parameters')
+    const baseUrl = API_CONFIG.FRONTEND_BASE_URL
+    redirect(`${baseUrl}/?error=missing_parameters`)
   }
 
   return <ClientChallengeProcessor transactionId={transactionId} md={md} />
